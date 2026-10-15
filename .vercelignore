@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+data
+node_modules
+tests
+TESTVERSLAG.md
+LOKAAL.md
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+.pnpm-store

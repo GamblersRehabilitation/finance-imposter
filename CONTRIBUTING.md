@@ -2,7 +2,7 @@
 
 ## Je ontwikkelomgeving
 
-Installeer Node.js 22.13 of hoger en Git. Clone deze repository, open de map en voer uit:
+Installeer Node.js 24 LTS en Git. Clone deze repository, open de map en voer uit:
 
 ```bash
 npm ci
@@ -37,7 +37,7 @@ Open vervolgens op GitHub een pull request naar `main`. Beschrijf wat verandert,
 
 ## Afspreken voordat je gameplay verandert
 
-De definitieve laptopminigames, steelminigames, het gokrad en de spelbalans zijn nog niet vastgesteld. Bespreek wezenlijke spelregelwijzigingen met het team. De README vermeldt de gekozen eindregels en de openstaande beslissingen. Toestemming voor een visueel prototype betekent niet automatisch toestemming voor een nieuwe financiële spelregel.
+De financiële laptopopdrachten, steelminigames en het gokrad zijn geïmplementeerd. De README beschrijft de gekozen spelregels en standaardbalans. Bespreek wezenlijke spelregelwijzigingen met het team. Behandel wijzigingen aan kansverdeling, beloningen en eindcondities als spelregelwijzigingen. Toestemming voor een visueel prototype betekent niet automatisch toestemming voor een nieuwe financiële spelregel.
 
 De server is de bron van waarheid. Houd autorisatie, beloningen, geldreserveringen en deadlines op de server. Een geheime rol mag nooit in een openbare API- of WebSocketprojectie terechtkomen. Een clientflag `success: true` is geen geldig minigamebewijs.
 

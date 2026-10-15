@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "concurrently -k \"tsx watch server/index.ts\" \"vite --host 0.0.0.0\"",
@@ -12,9 +12,11 @@
     "start": "tsx server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "deploy:prepare": "node scripts/prepare-release.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",

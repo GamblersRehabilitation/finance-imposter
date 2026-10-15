@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": { "api/index.ts": { "maxDuration": 30 } },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api?route=:path*" },
+    { "source": "/((?!api(?:/|$)|assets/).*)", "destination": "/index.html" }
+  ]
+}

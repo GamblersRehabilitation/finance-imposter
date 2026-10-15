@@ -1,0 +1,19 @@
+import { afterEach, beforeEach, expect, it } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { cloudHandler, type SnapshotRepository } from '../server/cloud';
+import { Store } from '../server/store';
+let state:string|undefined,version=0,base:string,server:Server,cookie:string;
+const repository:SnapshotRepository={async load(initial){state??=initial;return {version,state};},async save(expected,next){if(expected!==version)return false;state=next;version++;return true;}};
+async function request(path:string,body?:any,token?:string){const r=await fetch(base+'/api'+path,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie??'',...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')};}
+beforeEach(async()=>{state=undefined;version=0;cookie='';const handler=cloudHandler(repository,'test-password-cloud');server=createServer(handler);await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(server.address() as any).port}`;const r=await request('/admin/login',{password:'test-password-cloud'});expect(r.status).toBe(200);cookie=r.cookie!.split(';')[0];});
+afterEach(async()=>{await new Promise<void>(r=>server.close(()=>r()));});
+it('deelt sessies, credentials en vaste laptopcodes tussen onafhankelijke function-instanties',async()=>{const r=await request('/admin/sessions',{title:'Cloudtest'});expect(r.status).toBe(200);const first=await request(`/sessions/${r.data.code}`);expect(first.status).toBe(200);const other=createServer(cloudHandler(repository,'test-password-cloud'));await new Promise<void>(r=>other.listen(0,'127.0.0.1',r));try{const response=await fetch(`http://127.0.0.1:${(other.address() as any).port}/api/sessions/${r.data.code}`,{headers:{Cookie:cookie}});expect(response.status).toBe(200);expect((await response.json()).laptopCodes).toEqual(first.data.laptopCodes);}finally{await new Promise<void>(r=>other.close(()=>r()));}});
+it('verliest geen mutaties bij gelijktijdige verzoeken en verwerkt een dubbele taak eenmaal',async()=>{const created=await request('/admin/sessions',{title:'Parallel'}),code=created.data.code;
+  const command=(action:string,data:any={},id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data});
+  await command('demo');await command('start');const g=(await request(`/sessions/${code}`)).data,worker=g.players.find((p:any)=>p.role==='employee'),laptopId=g.assignments[worker.id][0],id=randomUUID();
+  const responses=await Promise.all([command('test-task',{playerId:worker.id,laptopId},id),command('test-task',{playerId:worker.id,laptopId},id),...g.players.slice(0,8).map((p:any)=>request(`/join/${code}`,{playerId:p.id}))]);
+  expect(responses.every(r=>r.status===200)).toBe(true);const result=(await request(`/sessions/${code}`)).data;expect(result.companyCash).toBe(13);expect(result.completions).toHaveLength(1);expect(result.players.filter((p:any)=>p.claimed)).toHaveLength(8);
+});
+it('bewaart rate limits tussen function-aanroepen en retourneert de cloudtransportkeuze',async()=>{const health=await request('/health');expect(health.data.transport).toBe('poll');for(let i=0;i<9;i++)expect((await request('/admin/login',{password:'wrong'})).status).toBe(401);expect((await request('/admin/login',{password:'wrong'})).status).toBe(429);});
+it('herstelt een SQLite-snapshot inclusief request-ID en toegangssleutels',()=>{const a=new Store(':memory:'),b=new Store(':memory:');try{a.restore(state!);const token=a.issue({kind:'admin'},null);const exported=a.snapshot();b.restore(exported);expect(b.identify(token)?.actor.kind).toBe('admin');expect(b.laptopCodes()).toEqual(a.laptopCodes());expect(b.snapshot()).toBe(exported);}finally{a.close();b.close();}});

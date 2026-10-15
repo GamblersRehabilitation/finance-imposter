@@ -1,0 +1,13 @@
+Eigen briefingvideo
+
+Plaats hier briefing.mp4 en vul in het beheerscherm bij Instructievideo-URL:
+/briefing.mp4
+
+Een directe HTTPS-link naar een elders opgeslagen video werkt ook. Gebruik een
+MP4-bestand of een andere URL die rechtstreeks door de browser kan worden afgespeeld,
+geen YouTube-paginalink. De video verschijnt op het digibord, met afspeelknoppen.
+Na afloop start het spel. Bij een onbereikbaar bestand kan de organisator of het
+digibord de briefing overslaan. Zonder ingestelde URL start het spel meteen.
+
+Voor grote video's online is externe videohosting praktischer dan een groot bestand
+in de repository. Vercel Hobby heeft gebruikslimieten voor opslag en dataverkeer.

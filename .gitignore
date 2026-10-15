@@ -10,3 +10,6 @@ LOKAAL.md
 *.sqlite-shm
 *.sqlite-wal
 .DS_Store
+
+.pnpm-store/
+.vercel
