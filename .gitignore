@@ -13,3 +13,4 @@ LOKAAL.md
 
 .pnpm-store/
 .vercel
+.env*

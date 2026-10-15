@@ -1,8 +1,9 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createServer } from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { handleUpload } from '@vercel/blob/client';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 import { Engine } from './engine.js';
@@ -29,11 +30,43 @@ export function createApp(options:{databasePath:string;adminPassword:string;cloc
   app.post('/api/admin/logout',(req,res)=>{const token=cookieToken(req);if(token)store.revoke(token);res.clearCookie('fi_admin');res.json({ok:true});});
   app.get('/api/admin/sessions',(req,res)=>{admin(req);res.json(store.all().map(g=>({code:g.code,title:g.title,phase:g.phase,createdAt:g.createdAt,players:g.players.length})));});
   app.post('/api/admin/sessions',(req,res)=>{admin(req);const g=engine.create(req.body.title);res.json({code:g.code});});
+  app.post('/api/admin/sessions/:code/delete',(req,res)=>{
+    admin(req);const g=engine.get(String(req.params.code));
+    const body=z.object({confirmCode:z.string()}).strict().parse(req.body);
+    if(body.confirmCode!==g.code)throw new GameError('CONFIRM','Typ de lobbycode om te verwijderen.',409);
+    if(!['lobby','ended'].includes(g.phase))throw new GameError('ACTIVE','Beëindig eerst het lopende spel.',409);
+    store.deleteSession(g.id);
+    for(const [ws,peer] of peers)if(peer.identity.sessionId===g.id||peer.code===g.code){peers.delete(ws);ws.close(4001,'lobby deleted');}
+    res.json({ok:true});
+  });
   app.get('/api/join/:code',(req,res)=>{limit(`join-read:${req.ip}`,120);const g=engine.get(String(req.params.code));res.json({code:g.code,title:g.title,phase:g.phase,registrationOpen:g.phase==='lobby',players:g.phase!=='ended'?g.players.filter(p=>!p.claimed).map(p=>({id:p.id,name:p.name})):[]});});
   app.post('/api/join/:code',(req,res)=>{limit(`join:${req.ip}`,40);const body=z.object({name:z.string().max(24).optional(),playerId:z.string().uuid().optional()}).strict().parse(req.body);res.json(engine.claim(String(req.params.code),body));});
   app.get('/api/sessions/:code',(req,res)=>{const {i,g}=sessionIdentity(req);res.json(project(g,i.actor,engine.now()));});
   app.post('/api/sessions/:code/presence',(req,res)=>{const {i,g}=sessionIdentity(req);engine.touch(g.code,i.actor);res.json({ok:true});});
-  app.post('/api/sessions/:code/action',(req,res)=>{const {i}=sessionIdentity(req);limit(`action:${i.actor.kind}:${i.sessionId}:${req.ip}`,300);const body=z.object({id:z.string().uuid(),action:z.string().max(40),data:z.record(z.unknown()).optional()}).strict().parse(req.body);res.json(engine.command(String(req.params.code),i.actor,body.id,body.action,body.data));});
+  app.post('/api/sessions/:code/action',(req,res)=>{const {i}=sessionIdentity(req);limit(`action:${i.actor.kind}:${i.sessionId}:${req.ip}`,300);const body=z.object({id:z.string().uuid(),action:z.string().max(40),data:z.record(z.unknown()).optional()}).strict().parse(req.body);const result=engine.command(String(req.params.code),i.actor,body.id,body.action,body.data);res.json({...result,state:project(engine.get(String(req.params.code)),i.actor,engine.now())});});
+  app.post('/api/sessions/:code/video-upload',async(req,res)=>{
+    admin(req);const g=engine.get(String(req.params.code));
+    if(g.phase!=='lobby')throw new GameError('PHASE','Upload de briefing vóór de start.',409);
+    limit(`video:${g.id}`,10);
+    const result=await handleUpload({request:req,body:req.body,onBeforeGenerateToken:async pathname=>{
+      if(!new RegExp(`^briefings/${g.id}/[a-f0-9-]{36}\\.mp4$`).test(pathname))throw new GameError('VIDEO_PATH','Ongeldig videopad.',400);
+      return {allowedContentTypes:['video/mp4'],maximumSizeInBytes:50*1024*1024,addRandomSuffix:true,validUntil:Date.now()+10*60*1000};
+    }});res.json(result);
+  });
+  const uploads=resolve(options.databasePath===':memory:'?'data':resolve(options.databasePath,'..'),'uploads');
+  app.post('/api/sessions/:code/video-file',express.raw({type:'application/octet-stream',limit:'50mb'}),(req,res)=>{
+    admin(req);const g=engine.get(String(req.params.code));
+    if(options.serverless)throw new GameError('VIDEO','Gebruik de online video-opslag.',400);
+    if(g.phase!=='lobby')throw new GameError('PHASE','Upload de briefing vóór de start.',409);
+    if(!Buffer.isBuffer(req.body)||req.body.length<12||req.body.toString('ascii',4,8)!=='ftyp')throw new GameError('VIDEO','Kies een geldig MP4-bestand.',400);
+    limit(`video:${g.id}`,10);const id=randomUUID();mkdirSync(uploads,{recursive:true});writeFileSync(resolve(uploads,`${id}.mp4`),req.body);
+    res.json({url:`/api/videos/${id}`});
+  });
+  app.get('/api/videos/:id',(req,res)=>{
+    if(options.serverless||!z.string().uuid().safeParse(req.params.id).success)throw new GameError('NOT_FOUND','Video niet gevonden.',404);
+    const file=resolve(uploads,`${req.params.id}.mp4`);if(!existsSync(file))throw new GameError('NOT_FOUND','Video niet gevonden.',404);
+    res.type('video/mp4').sendFile(file);
+  });
   app.post('/api/sessions/:code/device',(req,res)=>{admin(req);const g=engine.get(String(req.params.code));const body=z.object({kind:z.enum(['board','emergency','laptop']),laptopId:z.number().int().min(1).max(8).optional()}).strict().parse(req.body);if(body.kind==='laptop'&&!body.laptopId)throw new GameError('LAPTOP','Kies een laptop.');const token=store.issue({kind:body.kind,...(body.kind==='laptop'?{laptopId:body.laptopId}: {})},g.id);res.json({token});});
   const dist=resolve(process.cwd(),'dist');if(options.serveStatic!==false&&existsSync(dist)){app.use(express.static(dist,{index:false}));app.get('/{*path}',(_req,res)=>res.sendFile(resolve(dist,'index.html')));}
   app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{if(error instanceof GameError){res.status(error.status).json({error:error.code,message:error.message});}else if(error instanceof z.ZodError){res.status(400).json({error:'VALIDATION',message:'Controleer de ingevoerde waarden.',issues:error.issues.map(i=>({path:i.path,message:i.message}))});}else{console.error('Request error:',error instanceof Error?error.message:'unknown');res.status(500).json({error:'SERVER',message:'De server kon dit verzoek niet verwerken.'});}});

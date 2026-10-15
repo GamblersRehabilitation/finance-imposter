@@ -9,6 +9,17 @@ async function request(path:string,body?:any,token?:string){const r=await fetch(
 beforeEach(async()=>{state=undefined;version=0;cookie='';const handler=cloudHandler(repository,'test-password-cloud');server=createServer(handler);await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(server.address() as any).port}`;const r=await request('/admin/login',{password:'test-password-cloud'});expect(r.status).toBe(200);cookie=r.cookie!.split(';')[0];});
 afterEach(async()=>{await new Promise<void>(r=>server.close(()=>r()));});
 it('deelt sessies, credentials en vaste laptopcodes tussen onafhankelijke function-instanties',async()=>{const r=await request('/admin/sessions',{title:'Cloudtest'});expect(r.status).toBe(200);const first=await request(`/sessions/${r.data.code}`);expect(first.status).toBe(200);const other=createServer(cloudHandler(repository,'test-password-cloud'));await new Promise<void>(r=>other.listen(0,'127.0.0.1',r));try{const response=await fetch(`http://127.0.0.1:${(other.address() as any).port}/api/sessions/${r.data.code}`,{headers:{Cookie:cookie}});expect(response.status).toBe(200);expect((await response.json()).laptopCodes).toEqual(first.data.laptopCodes);}finally{await new Promise<void>(r=>other.close(()=>r()));}});
+it('bewaart opnieuw spelen en lobbyverwijdering over losse cloud-aanroepen',async()=>{
+ const code=(await request('/admin/sessions',{title:'Herhaaltest'})).data.code;
+ const act=(action:string)=>request(`/sessions/${code}/action`,{id:randomUUID(),action});
+ await act('demo');const lobby=(await request(`/sessions/${code}`)).data;
+ const token=(await request(`/join/${code}`,{playerId:lobby.players[0].id})).data.token;
+ await act('start');await act('end');expect((await act('replay')).status).toBe(200);
+ const phone=await request(`/sessions/${code}`,undefined,token);expect(phone.status).toBe(200);expect(phone.data.phase).toBe('lobby');expect(phone.data.me.role).toBeNull();
+ expect((await request(`/admin/sessions/${code}/delete`,{confirmCode:code})).status).toBe(200);
+ expect((await request(`/sessions/${code}`,undefined,token)).status).toBe(401);
+ expect((await request('/admin/sessions')).data).toEqual([]);
+});
 it('verliest geen mutaties bij gelijktijdige verzoeken en verwerkt een dubbele taak eenmaal',async()=>{const created=await request('/admin/sessions',{title:'Parallel'}),code=created.data.code;
   const command=(action:string,data:any={},id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data});
   await command('demo');await command('start');const g=(await request(`/sessions/${code}`)).data,worker=g.players.find((p:any)=>p.role==='employee'),laptopId=g.assignments[worker.id][0],id=randomUUID();
@@ -17,3 +28,13 @@ it('verliest geen mutaties bij gelijktijdige verzoeken en verwerkt een dubbele t
 });
 it('bewaart rate limits tussen function-aanroepen en retourneert de cloudtransportkeuze',async()=>{const health=await request('/health');expect(health.data.transport).toBe('poll');for(let i=0;i<9;i++)expect((await request('/admin/login',{password:'wrong'})).status).toBe(401);expect((await request('/admin/login',{password:'wrong'})).status).toBe(429);});
 it('herstelt een SQLite-snapshot inclusief request-ID en toegangssleutels',()=>{const a=new Store(':memory:'),b=new Store(':memory:');try{a.restore(state!);const token=a.issue({kind:'admin'},null);const exported=a.snapshot();b.restore(exported);expect(b.identify(token)?.actor.kind).toBe('admin');expect(b.laptopCodes()).toEqual(a.laptopCodes());expect(b.snapshot()).toBe(exported);}finally{a.close();b.close();}});
+it('reserveert online één gedeelde draai en boekt na function-herstart exact eenmaal',async()=>{const created=await request('/admin/sessions',{title:'Cloudrad'}),code=created.data.code;
+ const command=(action:string,data:any={},token?:string,id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data},token);
+ await command('demo');const lobby=(await request(`/sessions/${code}`)).data;await command('configure',{config:{...lobby.config,gamblerGoal:100}});
+ const gamblers=lobby.players.filter((p:any)=>p.role==='gambler'),tokens=await Promise.all(gamblers.map((p:any)=>request(`/join/${code}`,{playerId:p.id})));await command('start');await command('test-pot',{amount:10});
+ const attempts=await Promise.all(tokens.map(r=>command('gamble',{stake:5},r.data.token)));expect(attempts.map(r=>r.status).sort()).toEqual([200,409]);
+ const pending=(await request(`/sessions/${code}`)).data;expect(pending.gamblerCash).toBe(10);expect(pending.pendingSpin).toBeTruthy();const expected=10-5+pending.pendingSpin.payout;
+ const db=new Store(':memory:');try{db.restore(state!);const g=db.get(code)!;g.pendingSpin!.endsAt=Date.now()-1;db.save(g);state=db.snapshot();version++;}finally{db.close();}
+ const views=await Promise.all(tokens.map(r=>request(`/sessions/${code}`,undefined,r.data.token)));expect(views.every(r=>r.status===200&&r.data.gambler.balance===expected)).toBe(true);
+ const settled=(await request(`/sessions/${code}`)).data;expect(settled.pendingSpin).toBeNull();expect(settled.ledger.filter((entry:any)=>entry.kind==='gamble')).toHaveLength(1);
+});

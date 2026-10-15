@@ -1,6 +1,6 @@
-# Finance Imposter
+# Gamblers Addiction
 
-Een klassenspel met persoonlijke telefoons, acht taakterminals, een digibord en een emergency-iPad. De server controleert rollen, opdrachten, geld en spelregels. De bestaande vormgeving gebruikt vooral symbolen; er is geen geluid.
+Een klassenspel met persoonlijke telefoons, acht taakterminals, een digibord en een emergency-iPad. De server controleert rollen, opdrachten, geld en spelregels. De vormgeving combineert symbolen, diagrammen en korte uitleg. Optionele geluiden ondersteunen de feedback.
 
 ## Lokaal draaien
 
@@ -59,17 +59,17 @@ De kas wordt standaard vanaf 25 bedrijfspunten blijvend toegankelijk voor diefst
 
 Bevestig iedere stap. Een fout verliest de opgebouwde buit van de poging. Er zijn vier rondes met respectievelijk 1×, 2×, 3× en 4× de ingestelde basisbuit. Innen kan pas na een voltooide ronde, ook halverwege de volgende ronde. Niet voltooide stappen tellen niet mee. Na ronde vier kan niet worden doorgestapeld. Refresh behoudt de poging; een meeting beëindigt haar zonder uitbetaling. Bij een lege kas is innen onmogelijk; bij te weinig vrije kas wordt maximaal het nog beschikbare bedrag geïnd.
 
-De server boekt geïnde buit direct op de gezamenlijke gokkersrekening. Het bedrag blijft vijf seconden rood en gereserveerd in de bedrijfskas, wordt daarna afgeschreven en leidt tien seconden na innen tot een Beveiliger-melding. Gelijktijdige diefstallen kunnen hetzelfde geld niet dubbel innen.
+De server boekt geïnde buit direct op de gezamenlijke gokkersrekening. Het bedrag blijft dertig seconden rood en gereserveerd in de bedrijfskas, wordt daarna afgeschreven en leidt dertig seconden na innen tot een Beveiliger-melding. Gelijktijdige diefstallen kunnen hetzelfde geld niet dubbel innen.
 
-Het **gokrad** gebruikt een door de server bepaalde winkans van 55%. Een gewonnen draai betaalt 2× de inzet terug; verlies betaalt 0. Netto = totale uitbetaling − inzet. Inzet 5 geeft dus +5 of −5. De browser bepaalt nooit de uitslag. Alleen een actieve Gokker met voldoende saldo kan draaien; een draai heeft een wachttijd van 1,5 seconde.
+Het **gokrad** heeft acht even waarschijnlijke vakken met vermenigvuldigers, bonussen en inzetverlies. Een draai duurt vijf seconden; pas daarna boekt de server het resultaat. Zie de actuele regels en teststappen hieronder.
 
 ## Meetings, Beveiliger en ontslag
 
-Automatische meetings starten standaard na drie minuten vrij spel. De gekoppelde iPad kan een emergency-meeting starten; na een meeting geldt standaard een minuut cooldown.
+Automatische meetings starten standaard na vier minuten vrij spel. De gekoppelde iPad kan een emergency-meeting starten; na een meeting geldt standaard een minuut cooldown.
 
 De Manager beheert op de eigen telefoon achtereenvolgens **verzamelen → overleg → ontslag → meeting sluiten**. De timers van 30 en 90 seconden zijn richtlijnen: fasen gaan niet vanzelf verder. Er kan maximaal één speler worden ontslagen, of de Manager sluit zonder ontslag. De organisator kan bij uitval overnemen. Andere telefoons, inclusief ontslagen spelers, en terminals zijn gedurende alle meetingfasen geblokkeerd. De server weigert taken, diefstal, gokken en onderzoek tijdens een meeting.
 
-De Beveiliger blijft werken zoals in de oorspronkelijke game: twee controles per ronde, reset na meeting, laptopmeldingen pas na tien seconden en transactietijden via analoge klokjes. Geen identiteit of bedrag van de dader wordt doorgestuurd.
+De Beveiliger blijft werken zoals in de oorspronkelijke game: twee controles per ronde, reset na meeting, directe taakfoutmeldingen, diefstalmeldingen na dertig seconden en transactietijden via analoge klokjes. Geen identiteit of bedrag van de dader wordt doorgestuurd.
 
 Ontslagen spelers hebben geen spelrechten meer. Buiten meetings kunnen ze een doorlopende fictieve vacaturefeed bekijken en solliciteren; sollicitaties leveren een afwijzing op en hebben geen effect op het spel. Er wordt geen externe sollicitatie verstuurd.
 
@@ -123,3 +123,56 @@ npm run build
 De tests gebruiken tijdelijke opslag, echte HTTP/WebSocket-verbindingen, gecontroleerde tijd en afzonderlijke gesimuleerde cloudinstanties. Ze controleren onder meer 14 spelers plus 10 apparaten, koppelen en hervatten, financiële antwoorden, dubbele verzoeken, alle steelrondes, geldreserveringen, gokken, autorisatie, wachtrij, briefing, meetings, Beveiliger, eindregels en herstart. De cloudtests simuleren het opslagprotocol; echte Vercel-/Neon-controle vereist een gekoppeld account en database.
 
 Belangrijke bestanden: `server/engine.ts` (regels), `server/puzzles.ts` (financiële opdrachten), `server/views.ts` (gegevens per rol), `server/store.ts` (SQLite), `server/cloud.ts` en `api/index.ts` (cloudopslag), `src/GameWidgets.tsx` (spelinteracties). De vormgeving staat in `src/styles.css`.
+
+## Nieuwe spelbediening en zelf testen
+
+De acht terminalopdrachten gebruiken een balans, factuurdocumenten, wisselroute, spaargrafiek, schadedossier, biljettenkas, winststroom en portefeuillecirkel. Koppel de telefoon met de vier permanente laptopsymbolen en voer daarna de opdracht op de laptop uit. Elke financiële poging duurt 30 seconden. Een fout of verlopen tijd trekt de koppeling in en kost maximaal €2 uit de vrije bedrijfskas. Koppel opnieuw voor een nieuwe poging; er wordt nooit gereserveerde buit uitgegeven. Zie ONDERZOEK.md voor bronnen en ontwerpkeuzes.
+
+Het buitrad heeft zestien even waarschijnlijke vakken: acht keer inzetverlies, twee keer halve inzet terug, twee keer €1 nettowinst, drie keer ×2 en één ×4-jackpot. Vermenigvuldigers zijn uitbetaling inclusief inzet; halve uitbetaling rondt naar beneden af. De gemiddelde uitbetaling is lager dan de inzet, ook bij €1. Eén gedeelde draai tegelijk, maximaal €12.500 inzet, duur vijf seconden. De server reserveert de inzet en bepaalt de uitkomst bij de klik; de browser krijgt meteen de draaitijden en het doelvak, zonder op de volgende poll te wachten. Het saldo wordt pas aan het einde geboekt. De beweging loopt met de Web Animations API op de compositor, zonder React-updates per frame. Pauzeren bevriest het rad. Een meeting, ontslag van de draaiende speler of speleinde annuleert een onafgeronde draai zonder afschrijving.
+
+Een foute terminalboeking geeft geen beloning, kost maximaal €2 en meldt eenmaal per gekoppelde poging een taakfout aan de Beveiliger. Een mislukte steelstap geeft ook een taakfout. Na innen wordt de kas na dertig seconden afgeschreven en ontvangt de Beveiliger de diefstalmelding. Scans tonen fout- en transactietijden, geen namen. Een fout bewijst geen geheime rol. Er blijven twee scans per ronde. De Manager kan vanaf het overleg expliciet **Niemand ontslaan · hervatten** kiezen.
+
+Geluid staat standaard aan en wordt na een tik in de browser geactiveerd, met een luidsprekerknop om te dempen. Meetingmeldingen blijven actief tijdens scrollen, rolintroductie en meetingoverlays. Houd de spelpagina open; een geblokkeerde telefoon of achtergrondtab kan geluid door browser- of apparaatbeleid onderdrukken. De voorkeur blijft op het apparaat bewaard. Feedback gebruikt ook tekst en beweging; minder beweging volgt de apparaatinstelling.
+
+1. Lokaal: `npm ci`, `npm run setup`, `npm run dev`. Gebruik voor andere apparaten op hetzelfde wifi-netwerk `HOST=0.0.0.0` in je lokale `.env`, herstart en open `http://JOUW-LAN-IP:5173`. Laat Node alleen op het privénetwerk toe in Windows Firewall. Een 127.0.0.1-link werkt alleen op het apparaat zelf. Genereer QR-links vanaf het LAN-adres. Zie ook de LAN-instructies hierboven.
+2. Maak een aparte testsessie met demonstratiegegevens en open gekoppelde telefoons/laptops via **Apparaten & QR**. Gebruik aparte apparaten of privévensters voor verschillende telefoons.
+3. Koppel een taak via de telefoonsymbolen. Geef eerst een fout bedrag: geen beloning, wel een Beveiliger-melding. Scan die laptop, koppel opnieuw en bevestig het juiste bedrag: eenmaal belonen.
+4. Zet in testmodus de kas op 40 en buit op 10. Draai het rad: vijf seconden blijft de buit 10; pas bij stoppen verandert ze. De andere Gokker kan niet tegelijk inzetten. Controleer pauzeren en een meeting tijdens een draai.
+5. Voltooi een steelronde en kies **Buit innen**. De kas blijft dertig seconden gelijk, daarna volgen afschrijving, een rode verliesstrook gedurende acht seconden en de Beveiliger-melding. Roep een meeting op, doorloop verzamelen en overleg, kies niemand ontslaan en controleer of alle apparaten hervatten.
+6. Online werkt dezelfde test op de Vercel-URL. Door polling komen updates ongeveer iedere twee seconden; de server bewaakt de vijfseconden-deadline. Gebruik een eigen testsessie om een bestaand spel niet te beïnvloeden.
+
+### GitHub en publicatie
+
+Op 15 oktober 2026 is gecontroleerd dat Vercel-project `finance-imposter` geen Git-repositorykoppeling heeft. De toen actieve release kwam handmatig uit `codex/permanente-laptopcodes`. Deze verbeteringen zijn voorbereid op `codex/financiele-minigames-feedback`. Een lokale branch is niet automatisch een Vercel-productiebranch.
+
+Voor automatische publicatie: verbind in **Vercel → Project → Settings → Git** de repository `GamblersRehabilitation/finance-imposter` en kies bij **Production Branch** de gewenste branch, bijvoorbeeld `main`. Daarna start een push op die branch een productiebuild; andere branches krijgen normaal een preview. GitHub App-toestemming en commit-auteurrechten moeten op het eigen account kloppen. Deze wijziging schakelt die koppeling nog niet in. Handmatig publiceren kan via `npm run deploy:prepare`.
+
+De telefoonpagina gebruikt voor alle rollen dezelfde bovenkant: profiel, uitleg, taken en werkvloer. De Gokker scrolt daarna naar partner/buit, Stelen en het Rad; er zijn geen Gokker-tabbladen meer. De standaard vrije ronde is vier minuten. Bestaande sessies met de vorige standaard van drie minuten en nog openstaande oude diefstaldeadlines krijgen de nieuwe tijden eenmaal bij het laden. Andere handmatig ingestelde rondeduren blijven behouden.
+
+De profielbadge bovenaan is voor actieve spelers neutraal. De eigen rol staat in de persoonlijke uitleg; zo verraadt de bovenkant van de telefoon de Gokker niet.
+
+## Lobbybeheer, MP4 en opnieuw spelen
+
+Op **Overzicht** laat je spelers afzonderlijk of tegelijk toe, stel je Manager/Beveiliger/Gokker-aantallen in en upload je de briefing. Alle overige deelnemers worden werknemers. Er is geen vooraf ingestelde lobbycapaciteit in de bediening. **Verdeel rollen en start** verdeelt rollen en taken in dezelfde servertransactie. Het overzicht toont geen rol per speler. Het digibord toont vóór de start een QR-code, lobbycode, deelnemers en hun toelating.
+
+Na afloop staat onder **Lobbybeheer** de knop **Opnieuw met deze deelnemers**. Deze behoudt namen, toelating, telefoontokens, schermkoppelingen, instellingen en permanente laptopcodes. Rollen, taken, ontslagen, rekeningen, incidenten, sollicitaties en resultaten worden gewist. De volgende start verdeelt rollen en taken opnieuw. Een lopend spel moet eerst worden beëindigd. Dubbele verzoeken uit het vorige spel kunnen het nieuwe spel niet opnieuw resetten.
+
+Oude lobbies verwijder je onder **Lobbybeheer** door de lobbycode te typen. Alleen de beheerder kan een lobby in voorbereiding of na afloop definitief wissen. Telefoon- en schermtokens van die lobby worden ingetrokken; andere lobbies en de globale laptopcodes blijven bestaan. De MP4 wordt hierbij niet automatisch uit Blob-opslag verwijderd: meerdere lobbies kunnen dezelfde videolink gebruiken. Verwijder ongebruikte video's eventueel in Vercel Storage.
+
+Upload op Overzicht een **MP4 van maximaal 50 MB**, bij voorkeur H.264. Lokaal wordt die in de genegeerde map `data/uploads` opgeslagen. Online gaat het bestand rechtstreeks naar de publieke Vercel Blob-store, zodat ook grotere video's buiten de function-bodylimiet blijven. De server verstrekt alleen na beheerderscontrole een tijdelijk uploadtoken voor één MP4-pad. Vereist: `BLOB_READ_WRITE_TOKEN` als afgeschermde servervariabele, automatisch gekoppeld door de Blob-installatie. De briefing start pas nadat iemand op het digibord afspelen kiest; browserbeleid kan automatisch afspelen blokkeren. Na afloop begint het spel; de organisator kan ook de briefing afronden.
+
+De vier filmpjes bij de persoonlijke roluitleg duren exact tien seconden en hebben geen audiospoor. Ze staan in `public/roles`. De bewerkbare Remotion-bron staat in `role-videos`; de app heeft Remotion niet nodig tijdens het spelen. Open die map met `npm ci` en `npm run dev` voor Studio; exporteer met `npx remotion render employee ../public/roles/employee.mp4 --muted`, en analoog voor manager/security/gambler.
+
+Ontslagen spelers kunnen solliciteren met servergestuurde wachttijd, controlebalk en uitslag. Een deel wordt eerst groen en daarna afgewezen. Een aangenomen toeschouwer keert niet terug in het actieve spel. Resultaten blijven bij vernieuwen behouden en worden bij opnieuw spelen gewist.
+
+Taak- en sollicitatiebalken bewegen eveneens lokaal met compositoranimaties; de klokweergave ververst eenmaal per seconde. Draaien, schuiven en financiële bedragen instellen werken lokaal; alleen bevestigde acties worden naar de server gestuurd. De client mag geen definitieve uitbetaling of succes kiezen.
+
+## Moeilijkere opdrachten en willekeurige steelspellen
+
+Nieuwe financiële pogingen gebruiken gevarieerde hele bedragen: begroting en winst met oneven antwoorden, facturen met nabije afleiders, wisselverhoudingen zoals €3 → $5, oneven rentepercentages plus rekeningkosten, een verzekeringslimiet, vijf soorten biljetten/munten en wisselende portefeuillepercentages. Alle antwoorden blijven hele getallen. De terminal biedt directe gehele invoer en stappen van €1, €3 en €5; er zijn geen onbereikbare antwoorden door een vaste stap van €10. Reeds lopende oude vragen houden hun oorspronkelijke bedragen.
+
+Na het koppelen wijst de server willekeurig **Slot kraken** of **Geld omleiden** toe. De speler kiest geen methode. Het slot heeft per ronde vier timingpinnen met een gouden trefzone; volgende pinnen en rondes krijgen minder marge en meer snelheid. De wijzer beweegt lokaal met de Web Animations API. Alleen de stoptijd wordt verstuurd. De server berekent de hoek zelf, controleert de tijdmarge en verwerkt iedere nonce eenmaal.
+
+Omleiden gebruikt twaalf draaibare rechte stukken, bochten en splitsingen. Verbind IN linksboven met UIT rechtsonder. Draaien, resetten en de geldroute markeren lopen lokaal; alleen **Test route** stuurt de rotaties naar de server. Die controleert de oorspronkelijke stukken en echte onderlinge aansluitingen. Elke nieuw gegenereerde puzzel heeft een oplossing en begint onverbonden. Eén verbonden route voltooit één ronde. Vier rondebeloningen tellen op zoals bij het slot; een fout kost de opgebouwde buit en maximaal €2 vrije bedrijfskas. Oude steelpogingen worden bij openen eenmalig naar de nieuwe uitvoering vernieuwd, met behoud van ronde en buit.
+
+Bevestigde acties sturen direct de toegestane nieuwe spelstatus terug. Telefoons hoeven na een goede pin, koppeling of sollicitatie niet op de volgende cloudpoll te wachten. De browser accepteert alleen nieuwere revisies voor dezelfde sessie en identiteit; lopende radanimaties blijven beschermd tegen vroeg zichtbare uitbetalingen.

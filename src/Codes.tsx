@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Circle, Diamond, Eraser, Hexagon, Monitor, Smartphone, Square, Star, Triangle, X } from 'lucide-react';
+import { cue } from './feedback';
 import { Icon } from './ui';
 
 const shapes=[Circle,Triangle,Square,Diamond,Star,Hexagon];
@@ -29,19 +30,19 @@ export function CodePopup({s,taskId,kind,action,connected,onClose}:{s:any;taskId
     lock.current=true;setBusy(true);setError('');
     try{
       await action('terminal-begin',{kind,laptopId:taskId,code:value});
-      setValue('');
+      setValue('');cue('success');
     }catch(e){setError((e as Error).message);setValue('');}finally{lock.current=false;setBusy(false);}
   }
   async function close(){if(lock.current)return;lock.current=true;setBusy(true);try{if(attempt&&!done)await action('terminal-cancel');onClose();}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
   return <dialog ref={dialog} className="code-dialog" aria-label={done?'Geslaagd':attempt?'Telefoon gekoppeld':'Laptopcode invoeren'} onCancel={e=>{e.preventDefault();void close();}}>
     <button className="code-close" disabled={busy} onClick={close} aria-label="Sluiten"><X/></button>
-    {attempt?<div className="code-success" role="status" aria-label="Telefoon gekoppeld"><Check size={78}/><div className="code-flow"><Smartphone/><ArrowRight/><Monitor/></div><button className="btn icon-only" onClick={onClose} aria-label={kind==='theft'?'Doorgaan met steelspel':'Doorgaan op de terminal'}><ArrowRight/></button></div>:done?<div className="code-success" role="status" aria-label="Geslaagd"><Check size={78}/><button className="btn icon-only" onClick={onClose} aria-label="Doorgaan"><ArrowRight/></button></div>:<>
+    {attempt?<div className="code-success" role="status" aria-label="Telefoon gekoppeld"><Check size={78}/><h3>Telefoon gekoppeld</h3><p>{kind==='theft'?'Ga verder op je telefoon met het steelspel.':'Voer nu de opdracht op deze laptop uit.'}</p><div className="code-flow"><Smartphone/><ArrowRight/><Monitor/></div><button className="btn icon-only" onClick={onClose} aria-label={kind==='theft'?'Doorgaan met steelspel':'Doorgaan op de terminal'}><ArrowRight/></button></div>:done?<div className="code-success" role="status" aria-label="Geslaagd"><Check size={78}/><button className="btn icon-only" onClick={onClose} aria-label="Doorgaan"><ArrowRight/></button></div>:<>
       <div className="code-flow"><Monitor size={32}/><ArrowRight size={20}/><Smartphone size={30}/></div>
       <div className="code-task">{task?<Icon name={task.icon} size={40}/>:<Monitor size={40}/>}<span>{attempt?'Taakcode':'Laptopcode'}</span></div>
-      <div className={`code-slots ${error?'invalid':''}`} aria-label={`${value.length} van 4 vormen ingevoerd`}>{Array.from({length:4},(_,i)=><div key={i}>{value[i]!==undefined?<SymbolCode code={value[i]}/>:<span/>}</div>)}</div>
+      <p className="play-help">{taskId?`Laptop ${taskId}: `:''}Tik de vier symbolen na die op het laptopscherm staan.</p><div className={`code-slots ${error?'invalid':''}`} aria-label={`${value.length} van 4 vormen ingevoerd`}>{Array.from({length:4},(_,i)=><div key={i}>{value[i]!==undefined?<SymbolCode code={value[i]}/>:<span/>}</div>)}</div>
       {error&&<div className="code-error" role="alert"><X size={20}/><span>{error}</span></div>}
       {!active&&<div className="code-error" role="status">{connected?'Even wachten':'Verbinding herstellen'}</div>}
-      <div className="code-keypad">{shapes.map((Shape,i)=><button key={i} disabled={busy||!active||value.length===4} aria-label={names[i]} onClick={()=>{setValue(v=>v+String(i));setError('');}}><Shape size={30}/></button>)}</div>
+      <div className="code-keypad">{shapes.map((Shape,i)=><button key={i} disabled={busy||!active||value.length===4} aria-label={names[i]} onClick={()=>{setValue(v=>v+String(i));setError('');cue();}}><Shape size={30}/></button>)}</div>
       <div className="code-actions"><button className="btn light icon-only" disabled={busy||!value} onClick={()=>{setValue(v=>v.slice(0,-1));setError('');}} aria-label="Laatste vorm wissen"><Eraser/></button><button className="btn icon-only" disabled={busy||!active||value.length!==4} onClick={submit} aria-label={attempt?'Code bevestigen':'Laptop koppelen'}>{busy?<span className="loader"/>:<ArrowRight/>}</button></div>
     </>}
   </dialog>;

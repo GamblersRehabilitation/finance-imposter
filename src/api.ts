@@ -8,7 +8,7 @@ export async function api(path:string, body?:unknown, token?:string|null) {
 }
 export function useGame(code:string|null,token:string|null=null) {
   const [state,setState]=useState<any>(null),[connected,setConnected]=useState(false),[error,setError]=useState(''),[offset,setOffset]=useState(0);
-  const lastRevision=useRef(-1);
+  const lastRevision=useRef(-1),activeIdentity=useRef('');activeIdentity.current=`${code}:${token}`;
   useEffect(()=>{if(!code)return;let stopped=false,lastSeen=Date.now(),ws:WebSocket,timeout:ReturnType<typeof setTimeout>,attempt=0;setState(null);lastRevision.current=-1;
     const accept=(s:any)=>{if(s.revision>=lastRevision.current){setState(s);lastRevision.current=s.revision;setOffset(s.serverTime-Date.now());setError('');}};
     api(`/sessions/${code}`,undefined,token).then(accept).catch(e=>setError(e.message));
@@ -19,7 +19,7 @@ export function useGame(code:string|null,token:string|null=null) {
     const presence=()=>{if(!stopped)api(`/sessions/${code}/presence`,{},token).catch(()=>{});};presence();const presenceTimer=setInterval(presence,15000);
     return()=>{clearInterval(presenceTimer);stopped=true;clearTimeout(timeout);clearInterval(heartbeat);ws?.close();};
   },[code,token]);
-  const action=useCallback(async(action:string,data:unknown={},id=uuid())=>{if(!code)throw new Error('Geen sessie geselecteerd.');const result=await api(`/sessions/${code}/action`,{id,action,data},token);return result;},[code,token]);
+  const action=useCallback(async(action:string,data:unknown={},id=uuid())=>{if(!code)throw new Error('Geen sessie geselecteerd.');const result=await api(`/sessions/${code}/action`,{id,action,data},token);if(result.state&&activeIdentity.current===`${code}:${token}`&&result.state.revision>=lastRevision.current){lastRevision.current=result.state.revision;setState(result.state);setOffset(result.state.serverTime-Date.now());setError('');}return result;},[code,token]);
   return {state,connected,error,offset,action};
 }
-export function useServerNow(offset:number,pausedAt:number|null=null){const [now,setNow]=useState(Date.now());useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),100);return()=>clearInterval(id);},[]);return pausedAt??now+offset;}
+export function useServerNow(offset:number,pausedAt:number|null=null){const [now,setNow]=useState(Date.now());useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[]);return pausedAt??now+offset;}

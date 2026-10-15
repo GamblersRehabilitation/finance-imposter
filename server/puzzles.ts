@@ -1,26 +1,20 @@
-import { randomInt } from 'node:crypto';
-import type { Puzzle } from './types.js';
-
-export const financialTasks=[
-  ['calculator','Begroting'],['receipt','Factuurcontrole'],['coins','Valuta wisselen'],['piggy','Spaarrente'],
-  ['shield','Verzekeren'],['coins','Kascontrole'],['briefcase','Winst berekenen'],['scale','Portefeuille verdelen'],
-] as const;
-
-/** Fresh figures per attempt. Only the terminal receives the question; the answer stays on the server. */
-export function makePuzzle(laptopId:number):Puzzle {
-  const a=randomInt(4,10)*10,b=randomInt(2,4)*10;
-  let title='',expression='',answer=0;
-  switch(laptopId){
-    case 1:title='Begroting';expression=`+ €${a+b} − €${a} − ? = €0`;answer=b;break;
-    case 2:title='Factuurcontrole';expression=`${b/10} × €${a} + €${b} = ?`;answer=b/10*a+b;break;
-    case 3:title='Valuta wisselen';expression=`€1 → $2     €${a} → $ ?`;answer=a*2;break;
-    case 4:title='Spaarrente';expression=`€${a*10} + 10% = € ?`;answer=a*11;break;
-    case 5:title='Verzekeren';expression=`€${a*10} − €${b} eigen risico = € ?`;answer=a*10-b;break;
-    case 6:title='Kascontrole';expression=`${b/10} × €10 + ${a/10} × €5 = € ?`;answer=b+a/2;break;
-    case 7:title='Winst berekenen';expression=`€${a+b} omzet − €${a} kosten = € ?`;answer=b;break;
-    default:title='Portefeuille verdelen';expression=`€${a*10} totaal: 30% aandelen + 70% obligaties = € ? obligaties`;answer=a*7;
-  }
-  const choices=[answer,answer+10,Math.max(0,answer-10),answer+20];
-  for(let i=choices.length-1;i>0;i--){const j=randomInt(i+1);[choices[i],choices[j]]=[choices[j],choices[i]];}
-  return {title,expression,choices,answer};
+import {randomInt} from 'node:crypto';
+import type {Puzzle} from './types.js';
+export const financialTasks=[['calculator','Begroting'],['receipt','Factuurcontrole'],['exchange','Valuta wisselen'],['piggy','Spaarrente'],['shield','Verzekeren'],['banknotes','Kascontrole'],['chart','Winst berekenen'],['portfolio','Portefeuille verdelen']] as const;
+const odd=(min:number,max:number)=>randomInt(min,max)*2+1;
+export function makePuzzle(laptopId:number):Puzzle{
+ let title='',expression='',answer=0,instruction='',details:Puzzle['details']={};
+ switch(laptopId){
+ case 1:{const cost=randomInt(31,95),missing=odd(8,35),income=cost+missing;title='Begroting';expression=`€${income} inkomsten − €${cost} vaste kosten − ? = €0`;answer=missing;details={income,cost};instruction='Vul de ontbrekende kosten aan. Inkomsten en uitgaven moeten gelijk zijn.';break;}
+ case 2:{const quantity=randomInt(3,8),unitPrice=odd(6,29),shipping=odd(1,8);title='Factuurcontrole';answer=quantity*unitPrice+shipping;expression=`${quantity} dossiers × €${unitPrice} + €${shipping} verzending = ?`;details={quantity,unitPrice,shipping};instruction='Controleer aantal × prijs, plus verzending. Keur alleen het juiste totaal goed.';break;}
+ case 3:{const rateFrom=randomInt(2,5),rateTo=rateFrom+2,units=odd(3,13),euros=rateFrom*units;title='Valuta wisselen';answer=rateTo*units;expression=`€${rateFrom} → $${rateTo}; €${euros} → $ ?`;details={rateFrom,rateTo,euros};instruction='Gebruik de koersverhouding. Deel eerst door het eurobedrag van de koers, vermenigvuldig daarna.';break;}
+ case 4:{const principal=randomInt(3,12)*100,rate=[3,5,7,9][randomInt(4)],fee=odd(1,5);title='Spaarrente';answer=principal+principal*rate/100-fee;expression=`€${principal} + ${rate}% jaarrente − €${fee} kosten = € ?`;details={principal,rate,fee};instruction='Bereken één jaar rente en trek daarna de rekeningkosten af. Gebruik hele euro’s.';break;}
+ case 5:{const damage=odd(65,265),excess=odd(8,28),limit=[175,225,275,325][randomInt(4)];title='Verzekeren';answer=Math.min(damage-excess,limit);expression=`Schade €${damage} − eigen risico €${excess}; maximaal €${limit}`;details={damage,excess,limit};instruction='Trek het eigen risico af. Betaal nooit meer dan de dekkingslimiet.';break;}
+ case 6:{const denominations=[20,10,5,2,1],counts=[randomInt(1,4),randomInt(1,5),odd(0,3),randomInt(1,5),randomInt(3)*2];title='Kascontrole';answer=denominations.reduce((sum,n,i)=>sum+n*counts[i],0);expression=denominations.map((n,i)=>`${counts[i]} × €${n}`).join(' + ');details={denominations,counts};instruction='Tel biljetten én munten. Vul per vak het aantal in en verzegel het totaal.';break;}
+ case 7:{const costs=[odd(30,75),odd(12,35),odd(3,18)],profit=odd(9,49),revenue=costs.reduce((n,x)=>n+x,0)+profit;title='Winst berekenen';answer=profit;expression=`€${revenue} omzet − ${costs.map(n=>`€${n}`).join(' − ')} kosten = € ?`;details={revenue,costs};instruction='Trek salaris, huur en overige kosten van de omzet af. Boek de resterende winst.';break;}
+ default:{const total=randomInt(3,12)*100,bondPercent=[35,45,55,65,75][randomInt(5)];title='Portefeuille verdelen';answer=total*bondPercent/100;expression=`€${total} vermogen; ${bondPercent}% obligaties, ${100-bondPercent}% aandelen`;details={total,bondPercent};instruction='Bereken het obligatiebedrag uit het totale vermogen en de doelverdeling.';}
+ }
+ const alternatives=new Set([answer]);while(alternatives.size<4){const n=answer+[3,-3,5,-5,7,-7][randomInt(6)];if(n>=0)alternatives.add(n);}
+ const choices=[...alternatives];for(let i=choices.length-1;i>0;i--){const j=randomInt(i+1);[choices[i],choices[j]]=[choices[j],choices[i]];}
+ return {title,expression,answer,choices,kind:['budget','invoice','exchange','saving','claim','cash','profit','portfolio'][laptopId-1],instruction,details};
 }

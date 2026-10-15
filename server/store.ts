@@ -25,10 +25,24 @@ export class Store {
     if(path!==':memory:'){chmodSync(path,0o600);}
   }
   laptopCodes():Record<number,string> {return Object.fromEntries((this.db.prepare('SELECT laptop_id,code FROM laptop_codes').all() as {laptop_id:number;code:string}[]).map(r=>[r.laptop_id,r.code]));}
-  private read(state:string):Game {const g=JSON.parse(state) as Game;g.laptopCodes=this.laptopCodes();g.terminalAttempts=(g.terminalAttempts??[]).filter(t=>t.puzzle);g.config.theftAmount??=null;g.summary??=null;g.presence??={};g.lastGambles??={};g.players.forEach(p=>p.admitted??=true);g.tasks.forEach((t,i)=>{if(t.module.endsWith('-placeholder')){t.module=`finance-${i+1}`;t.label=financialTasks[i][1];t.icon=financialTasks[i][0];}});return g;}
+  private read(state:string):Game {const g=JSON.parse(state) as Game;g.laptopCodes=this.laptopCodes();
+    // Apply the requested timing update once, including existing sessions and paused deadlines.
+    if((g.rulesVersion??0)<2){
+      if(g.config.autoMeetingMs===180000){g.config.autoMeetingMs=240000;if(g.nextMeetingAt!==null)g.nextMeetingAt+=60000;}
+      for(const t of g.thefts){const oldGap=t.alertAt-t.debitAt;if(!t.debited)t.debitAt+=25000;if(!t.alerted)t.alertAt+=oldGap===5000?20000:25000;}
+      g.rulesVersion=2;
+    }
+    g.terminalAttempts=(g.terminalAttempts??[]).filter(t=>t.puzzle);g.terminalAttempts.forEach(t=>{if(t.taskExpiresAt===undefined){t.taskExpiresAt=t.expiresAt-270000;if(t.kind==='task')t.expiresAt=t.taskExpiresAt;}});g.config.theftAmount??=null;g.summary??=null;g.pendingSpin??=null;g.taskFailures??=[];g.jobs??=[];g.presence??={};g.lastGambles??={};g.players.forEach(p=>p.admitted??=true);g.tasks.forEach((t,i)=>{t.icon=financialTasks[i][0];if(t.module.endsWith('-placeholder')){t.module=`finance-${i+1}`;t.label=financialTasks[i][1];t.icon=financialTasks[i][0];}});return g;}
   all():Game[] {return (this.db.prepare('SELECT state FROM sessions').all() as {state:string}[]).map(r=>this.read(r.state));}
   get(code:string):Game|undefined {const row=this.db.prepare('SELECT state FROM sessions WHERE code=? OR id=?').get(code,code) as {state:string}|undefined; return row ? this.read(row.state) : undefined;}
   save(g:Game) {this.db.prepare('INSERT INTO sessions(id,code,state) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state').run(g.id,g.code,JSON.stringify(g));}
+  deleteSession(id:string) {
+    this.transaction(()=>{
+      this.db.prepare('DELETE FROM credentials WHERE session_id=?').run(id);
+      this.db.prepare('DELETE FROM requests WHERE session_id=?').run(id);
+      this.db.prepare('DELETE FROM sessions WHERE id=?').run(id);
+    });
+  }
   issue(actor:Actor, sessionId:string|null, expiresAt:number|null=null):string {
     const token=randomBytes(32).toString('base64url');
     this.db.prepare('INSERT INTO credentials VALUES(?,?,?,?)').run(hashToken(token),sessionId,JSON.stringify(actor),expiresAt);return token;
