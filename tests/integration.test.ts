@@ -35,13 +35,15 @@ it('koppelt telefoon en terminal realtime, bewaart de poging na herstart en beta
   expect(begin.status).toBe(200);expect(begin.data.state.me.id).toBe(worker.id);expect(begin.data.state).not.toHaveProperty('config');expect(begin.data.state.terminalAttempt.id).toBe(begin.data.attemptId);await eventually(()=>!!terminal.states.at(-1)?.terminal&&!!phone.states.at(-1)?.terminalAttempt);
   expect(terminal.states.at(-1).terminal.player.name).toBe(worker.name);
   expect(phone.states.at(-1).terminalAttempt).not.toHaveProperty('challenge');
-  const answer=runtime.engine.get(g.code).terminalAttempts[0].puzzle.answer,attemptId=begin.data.attemptId;
+  const attemptId=begin.data.attemptId;
   runtime.close();runtime=createApp({databasePath:join(dir,'test.sqlite'),adminPassword:'test-password-long',serveStatic:false});
   await new Promise<void>(r=>runtime.server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(runtime.server.address() as any).port}`;
   expect(runtime.engine.get(g.code).laptopCodes).toEqual(codes);
   expect(runtime.engine.create().laptopCodes).toEqual(codes);
   const reconnected=await socket(g,token);expect(reconnected.states[0].terminalAttempt.id).toBe(attemptId);
-  const id=randomUUID(),body={id,action:'terminal-confirm',data:{attemptId,answer}};
+  for(let stage=0;stage<2;stage++){const t=runtime.engine.get(g.code).terminalAttempts[0];const part=await req(`/sessions/${g.code}/action`,{id:randomUUID(),action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,answer:t.puzzle.answer}},deviceToken);expect(part.status).toBe(200);expect(part.data.completed).toBe(false);expect(runtime.engine.get(g.code).companyCash).toBe(10);}
+  const t=runtime.engine.get(g.code).terminalAttempts[0];
+  const id=randomUUID(),body={id,action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,matches:t.puzzle.matching!.solution}};
   const results=await Promise.all([req(`/sessions/${g.code}/action`,body,deviceToken),req(`/sessions/${g.code}/action`,body,deviceToken)]);
   expect(results.map(r=>r.status)).toEqual([200,200]);expect(runtime.engine.get(g.code).companyCash).toBe(13);
   expect((await req(`/sessions/${g.code}/action`,{...body,id:randomUUID()},deviceToken)).status).toBe(409);

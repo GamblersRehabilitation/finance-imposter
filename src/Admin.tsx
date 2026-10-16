@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {usePageIdentity} from './pageIdentity';
 import QRCode from 'qrcode';
 import { Activity, MonitorSmartphone, SlidersHorizontal, ContactRound, ListTodo, Gauge, ArrowRight, ArrowUpRight, BellRing, BriefcaseBusiness, Check, ChevronDown, CirclePlus, ClipboardList, Coins, Copy, DoorOpen, FlaskConical, LayoutDashboard, LogOut, Monitor, Pause, Play, Plus, QrCode, RotateCcw, Settings2, ShieldCheck, Smartphone, Square, Spade, UsersRound, Wallet, X } from 'lucide-react';
 import { api, useGame, useServerNow, uuid, copyText } from './api';
@@ -12,6 +13,7 @@ type AdminState=Game & {serverTime:number;possibleIncome:number};
 const pages=[['overview','Overzicht',Gauge],['players','Spelers & rollen',ContactRound],['tasks','Opdrachten',ListTodo],['config','Spelinstellingen',SlidersHorizontal],['devices','Apparaten & QR',MonitorSmartphone],['test','Testomgeving',FlaskConical]] as const;
 export function Admin(){
   const [logged,setLogged]=useState(false),[checking,setChecking]=useState(true),[sessions,setSessions]=useState<any[]>([]),[code,setCode]=useState<string|null>(localStorage.getItem('fi-session')),[page,setPage]=useState('overview'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+  usePageIdentity(page);
   const {state,connected,error,offset,action}=useGame(logged?code:null);const s=state as AdminState|null,now=useServerNow(offset,s?.pausedAt);
   const load=useCallback(()=>api('/admin/sessions').then(list=>{setSessions(list);setLogged(true);if(!code||!list.some((x:any)=>x.code===code))setCode(list[0]?.code??null);}).catch(()=>setLogged(false)).finally(()=>setChecking(false)),[code]);
   useEffect(()=>{load();},[]);useEffect(()=>{window.scrollTo(0,0);},[page,code]);useEffect(()=>{if(code)localStorage.setItem('fi-session',code);else localStorage.removeItem('fi-session');},[code]);

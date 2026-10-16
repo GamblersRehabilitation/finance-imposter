@@ -25,7 +25,7 @@ export function makePipeBoard():PipeBoard{
 export function refreshTheftChallenge(state:TheftState,now:number){
  state.nonce=randomUUID();state.version=2;
  if(state.module==='diversion'){state.pipes=makePipeBoard();delete state.lock;}
- else{state.lock={startedAt:now,offset:randomInt(360),speed:85+state.round*12+state.step*8,target:randomInt(360),width:46-state.round*4-state.step*3};delete state.pipes;}
+ else{state.lock={startedAt:now,offset:randomInt(360),speed:85+state.round*12+state.step*20,target:randomInt(360),width:46-state.round*4-state.step*3};delete state.pipes;}
 }
 export function makeTheftState(module:'lockpick'|'diversion',now:number):TheftState{
  const state:TheftState={module,version:2,round:1,step:0,loot:0,target:0,nonce:randomUUID()};refreshTheftChallenge(state,now);return state;

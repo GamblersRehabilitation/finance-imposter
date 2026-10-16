@@ -176,3 +176,13 @@ Na het koppelen wijst de server willekeurig **Slot kraken** of **Geld omleiden**
 Omleiden gebruikt twaalf draaibare rechte stukken, bochten en splitsingen. Verbind IN linksboven met UIT rechtsonder. Draaien, resetten en de geldroute markeren lopen lokaal; alleen **Test route** stuurt de rotaties naar de server. Die controleert de oorspronkelijke stukken en echte onderlinge aansluitingen. Elke nieuw gegenereerde puzzel heeft een oplossing en begint onverbonden. Eén verbonden route voltooit één ronde. Vier rondebeloningen tellen op zoals bij het slot; een fout kost de opgebouwde buit en maximaal €2 vrije bedrijfskas. Oude steelpogingen worden bij openen eenmalig naar de nieuwe uitvoering vernieuwd, met behoud van ronde en buit.
 
 Bevestigde acties sturen direct de toegestane nieuwe spelstatus terug. Telefoons hoeven na een goede pin, koppeling of sollicitatie niet op de volgende cloudpoll te wachten. De browser accepteert alleen nieuwere revisies voor dezelfde sessie en identiteit; lopende radanimaties blijven beschermd tegen vroeg zichtbare uitbetalingen.
+
+## Toegankelijkere bediening en rolherkenning
+
+De meetingknop vult nu een groot deel van het oproepscherm; ook de primaire meetingacties op de Managertelefoon zijn groter. De browser gebruikt aparte SVG-tabiconen voor beheerpagina's, telefoons, rollen, het digibord, meetings en de acht taaktypes. Op de telefoon is de profielbadge rolgebonden: kroon, schild, schoppen of persoon.
+
+Nieuwe verzekeringsvragen hebben één aftreksom, zonder aanvullende dekkingslimiet. De speler kiest één van vier bedragen en bevestigt. Bedragen blijven geheel. Oude lopende dossiers met een limiet behouden hun oorspronkelijke vraag en antwoord.
+
+De vier lockpickpinnen gebruiken achtereenvolgens de buitenste ring en drie steeds kleinere binnenringen. Wijzer en trefzone liggen altijd op dezelfde actieve ring. Iedere volgende pin draait sneller; een nieuwe ronde begint weer op de buitenring en heeft een hogere basissnelheid.
+
+Elke financiële taak bestaat uit drie verschillende onderdelen: de bestaande financiële handeling, afwijkende dossierbedragen controleren en drie betalingen aan dossiers koppelen. Elk onderdeel heeft 30 seconden. Alleen na alle drie volgt de taakbeloning. Na een fout (maximaal €2 kasverlies), verlopen tijd of meeting koppel je opnieuw; afgeronde onderdelen blijven bewaard. Opnieuw spelen en testreset wissen deze voortgang. De uitkering vraagt alleen schade minus eigen risico, met vier antwoordkeuzes.

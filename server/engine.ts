@@ -6,7 +6,8 @@ import { taskAdapters } from './minigames.js';
 import { wheelPayout, WHEEL } from '../src/wheelRules.js';
 import {makeTheftState,refreshTheftChallenge} from './theftPuzzles.js';
 import {angleDistance,lockAngle,tracePipes} from '../src/theftRules.js';
-import { financialTasks, makePuzzle } from './puzzles.js';
+import {makeTaskStage,taskProgressKey,TASK_PARTS} from './taskStages.js';
+import { financialTasks } from './puzzles.js';
 const int = z.number().int().min(0).max(100000);
 const positive = z.number().int().min(1).max(100000);
 const roleSchema=z.enum(['manager','security','gambler','employee']);
@@ -30,7 +31,7 @@ export class Engine {
   get(code:string):Game {const g=this.store.get(code);if(!g)throw new GameError('NOT_FOUND','Deze sessie bestaat niet.',404);return g;}
   create(title='Nieuwe vestiging'):Game {
     let code:string;do{code=randomInt(100000,1000000).toString();}while(this.store.get(code));
-    const g:Game={rulesVersion:2,id:randomUUID(),code,title:nameSchema.parse(title),revision:0,createdAt:this.now(),phase:'lobby',pausedAt:null,config:defaultConfig(),players:[],tasks:tasks.map(([icon,label],i)=>({id:i+1,icon,label,reward:8,module:`finance-${i+1}`})),assignments:{},completions:[],laptopCodes:this.store.laptopCodes(),terminalAttempts:[],companyCash:10,gamblerCash:0,theftUnlocked:false,thefts:[],investigations:[],ledger:[],meeting:{phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null},round:0,nextMeetingAt:null,cooldownUntil:null,lastDismissal:null,winner:null,endReason:null,pendingSpin:null,jobs:[],taskFailures:[],summary:null,presence:{},lastGambles:{}};
+    const g:Game={rulesVersion:2,id:randomUUID(),code,title:nameSchema.parse(title),revision:0,createdAt:this.now(),phase:'lobby',pausedAt:null,config:defaultConfig(),players:[],tasks:tasks.map(([icon,label],i)=>({id:i+1,icon,label,reward:8,module:`finance-${i+1}`})),assignments:{},completions:[],laptopCodes:this.store.laptopCodes(),terminalAttempts:[],taskProgress:{},companyCash:10,gamblerCash:0,theftUnlocked:false,thefts:[],investigations:[],ledger:[],meeting:{phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null},round:0,nextMeetingAt:null,cooldownUntil:null,lastDismissal:null,winner:null,endReason:null,pendingSpin:null,jobs:[],taskFailures:[],summary:null,presence:{},lastGambles:{}};
     this.store.save(g);return g;
   }
   ledger(g:Game,kind:string,amount:number,detail:string){g.ledger.push({id:randomUUID(),kind,amount,company:g.companyCash,gamblers:g.gamblerCash,at:this.now(),detail});}
@@ -57,7 +58,8 @@ export class Engine {
     need(!existing||existing.playerId===p.id,'TERMINAL_BUSY','Deze terminal is bezet.',409);
     if(existing?.playerId===p.id&&existing.kind===kind)return {ok:true,attemptId:existing.id};
     g.terminalAttempts=g.terminalAttempts.filter(t=>t.playerId!==p.id);
-    const attempt:Game['terminalAttempts'][number]={id:randomUUID(),playerId:p.id,laptopId,kind,round:g.round,expiresAt:this.now()+(kind==='task'?30000:300000),taskExpiresAt:this.now()+30000,puzzle:makePuzzle(laptopId)};
+    const taskStage=kind==='task'?(g.taskProgress[taskProgressKey(p.id,laptopId)]??0):0;
+    const attempt:Game['terminalAttempts'][number]={taskStage,challengeId:randomUUID(),id:randomUUID(),playerId:p.id,laptopId,kind,round:g.round,expiresAt:this.now()+(kind==='task'?30000:300000),taskExpiresAt:this.now()+30000,puzzle:makeTaskStage(laptopId,taskStage)};
     if(kind==='theft')attempt.theft=makeTheftState(this.theftRoll()===0?'lockpick':'diversion',this.now());
     g.terminalAttempts.push(attempt);return {ok:true,attemptId:attempt.id};
   }
@@ -73,11 +75,22 @@ export class Engine {
     this.terminalReady(g);need(a.kind==='laptop','FORBIDDEN','Voltooi de opdracht op de terminal.',403);
     const attempt=g.terminalAttempts.find(t=>t.id===data.attemptId&&t.laptopId===(a as {laptopId:number}).laptopId);
     need(attempt&&attempt.round===g.round,'ATTEMPT','Deze poging is verlopen.',409);
+    need(!attempt!.taskFinished,'ATTEMPT','Deze poging is verlopen.',409);
     if(this.now()>=(attempt!.taskExpiresAt??attempt!.expiresAt)){this.expireTask(g,attempt!);return {ok:false,message:'Tijd verstreken. Koppel de taak opnieuw.'};}
-    // A theft pairing renders an ordinary financial task as camouflage; completing it never awards employee income.
-    if(int.parse(data.answer)!==attempt!.puzzle.answer){this.expireTask(g,attempt!,'answer');return {ok:false,correct:false,message:'Poging mislukt. Maximaal €2 kasverlies. Koppel opnieuw.'};}
-    if(attempt!.kind==='task')this.complete(g,attempt!.playerId,attempt!.laptopId);
-    return {ok:true};
+    const t=attempt!,stage=t.taskStage??0;
+    need(data.challengeId===t.challengeId||(!data.challengeId&&stage===0),'CHALLENGE','Er staat een nieuw onderdeel klaar. Herlaad de terminal.',409);
+    let correct=false;
+    if(t.puzzle.kind==='matching'){
+      const matches=z.array(z.number().int().min(0).max(2)).length(3).parse(data.matches);
+      correct=new Set(matches).size===3&&matches.every((value,i)=>value===t.puzzle.matching!.solution[i]);
+    }else correct=int.parse(data.answer)===t.puzzle.answer;
+    if(!correct){this.expireTask(g,t,'answer');return {ok:false,correct:false,message:'Poging mislukt. Maximaal €2 kasverlies. Koppel opnieuw; afgeronde onderdelen blijven staan.'};}
+    const next=stage+1;
+    if(t.kind==='task')g.taskProgress[taskProgressKey(t.playerId,t.laptopId)]=next;
+    if(next>=TASK_PARTS){if(t.kind==='task')this.complete(g,t.playerId,t.laptopId);else t.taskFinished=true;return {ok:true,completed:true};}
+    t.taskStage=next;t.challengeId=randomUUID();t.puzzle=makeTaskStage(t.laptopId,next);t.taskExpiresAt=this.now()+30000;
+    if(t.kind==='task')t.expiresAt=t.taskExpiresAt;
+    return {ok:true,completed:false,part:next,total:TASK_PARTS};
   }
   theftStep(g:Game,a:Actor,data:any){
     this.terminalReady(g);const p=this.player(g,a,'gambler');z.enum(['start','step','cashout','refresh']).parse(data.operation);const t=g.terminalAttempts.find(t=>t.id===data.attemptId&&t.playerId===p.id&&t.kind==='theft');
@@ -178,7 +191,7 @@ export class Engine {
         case 'start':this.admin(a);this.start(g);break;
         case 'replay':{
           this.admin(a);need(g.phase==='ended','REPLAY','Beëindig eerst het huidige spel.',409);
-          g.phase='lobby';g.pausedAt=null;g.summary=null;g.winner=null;g.endReason=null;
+          g.phase='lobby';g.taskProgress={};g.pausedAt=null;g.summary=null;g.winner=null;g.endReason=null;
           g.jobs=[];g.pendingSpin=null;g.taskFailures=[];g.lastGambles={};g.assignments={};
           g.companyCash=g.config.startCapital;g.gamblerCash=0;g.completions=[];g.terminalAttempts=[];
           g.thefts=[];g.investigations=[];g.ledger=[];g.theftUnlocked=false;
@@ -213,7 +226,7 @@ export class Engine {
         case 'test-meeting':this.test(g,a);this.meeting(g,'admin');break;
         case 'test-dismiss':this.test(g,a);this.dismiss(g,z.string().parse(data.playerId),true);break;
         case 'test-evaluate':this.test(g,a);this.evaluate(g);break;
-        case 'test-reset':{this.test(g,a);g.phase='lobby';g.jobs=[];g.pendingSpin=null;g.taskFailures=[];g.summary=null;g.lastGambles={};g.companyCash=g.config.startCapital;g.gamblerCash=0;g.completions=[];g.terminalAttempts=[];g.thefts=[];g.investigations=[];g.ledger=[];g.theftUnlocked=false;g.meeting={phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null};g.round=0;g.nextMeetingAt=null;g.cooldownUntil=null;g.pausedAt=null;g.lastDismissal=null;g.winner=null;g.endReason=null;g.players.forEach(p=>{p.dismissed=false;p.checks=0;p.introSeen=false;});break;}
+        case 'test-reset':{this.test(g,a);g.phase='lobby';g.taskProgress={};g.jobs=[];g.pendingSpin=null;g.taskFailures=[];g.summary=null;g.lastGambles={};g.companyCash=g.config.startCapital;g.gamblerCash=0;g.completions=[];g.terminalAttempts=[];g.thefts=[];g.investigations=[];g.ledger=[];g.theftUnlocked=false;g.meeting={phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null};g.round=0;g.nextMeetingAt=null;g.cooldownUntil=null;g.pausedAt=null;g.lastDismissal=null;g.winner=null;g.endReason=null;g.players.forEach(p=>{p.dismissed=false;p.checks=0;p.introSeen=false;});break;}
         default:throw new GameError('ACTION','Onbekende actie.',404);
       }
       g.revision++;this.store.save(g);this.store.cache(g.id,actorKey,id,response,signature);return {g,result:response,changed:true};});

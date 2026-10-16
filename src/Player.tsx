@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { ArrowLeft, ArrowRight, BellRing, BriefcaseBusiness, Check, Coins, DoorClosed, Eye, FileCheck2, Fingerprint, Hourglass, LockKeyhole, MapPin, Search, ShieldCheck, Spade, UsersRound, X } from 'lucide-react';
 
+import {usePageIdentity} from './pageIdentity';
 import {presentWheelResult} from './wheelPresentation';
 import { SoundToggle } from './feedback';
 
@@ -13,7 +14,7 @@ import { CodePopup } from './Codes';
 
 import { TheftGame, GambleGame, Briefing, ResultSummary, InfiniteJobs } from './GameWidgets';
 
-import { Alert, AnalogClock, Avatar, Brand, FloorMap, Icon, MeetingOverlay, MoneyBar, MoneyStatus, money, Ring, RoleIcon } from './ui';
+import { Alert, AnalogClock, Avatar, Brand, FloorMap, Icon, MeetingOverlay, MoneyBar, MoneyStatus, money, Ring, RoleIcon, roleNames } from './ui';
 
 function playerStorage(){return new URLSearchParams(location.search).get('demo')==='1'?sessionStorage:localStorage;}
 
@@ -21,13 +22,14 @@ function playerToken(code:string){const query=new URLSearchParams(location.searc
 
 export function PlayerApp({code}:{code:string}){const [token,setToken]=useState(()=>playerToken(code));if(!token)return <Onboarding code={code} onJoin={t=>{playerStorage().setItem(`fi-player-${code}`,t);setToken(t);}}/>;return <PlayerScreen code={code} token={token} reset={()=>{playerStorage().removeItem(`fi-player-${code}`);setToken(null);}}/>;}
 
-function Onboarding({code,onJoin}:{code:string;onJoin:(token:string)=>void}){const [data,setData]=useState<any>(null),[name,setName]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);useEffect(()=>{api(`/join/${code}`).then(setData).catch(e=>setError(e.message));},[code]);async function join(body:unknown){setBusy(true);try{const r=await api(`/join/${code}`,body);onJoin(r.token);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}return <main className="join-page"><Brand large/><div className="join-art"><BriefcaseBusiness size={72}/><span><Fingerprint size={30}/></span></div><h1>Welkom bij de vestiging.</h1><p>Kies je naam of registreer je hieronder.<br/>Je geheime rol verschijnt alleen op jouw telefoon.</p>{error&&<Alert>{error}</Alert>}{data&&(data.registrationOpen||data.players.length>0)?<><div className="join-names">{data.players.map((p:any)=><button disabled={busy} key={p.id} onClick={()=>join({playerId:p.id})}><Avatar name={p.name} small/>{p.name}<ArrowRight size={16}/></button>)}</div>{data.registrationOpen&&<form onSubmit={(e:FormEvent)=>{e.preventDefault();join({name});}}><label>Jouw naam<input autoComplete="given-name" maxLength={24} value={name} onChange={e=>setName(e.target.value)} placeholder="Voornaam" required/></label><button className="btn full" disabled={busy}>Doe mee <ArrowRight size={18}/></button></form>}</>:data&&<div className="join-closed"><Hourglass size={36}/><p>Er zijn geen vrije namen beschikbaar. Gebruik je bestaande koppeling of vraag de organisator om een persoonlijke herstellink.</p></div>}<small>Gamblers Addiction · Houd je rol geheim.</small></main>;}
+function Onboarding({code,onJoin}:{code:string;onJoin:(token:string)=>void}){usePageIdentity('phone','Doe mee');const [data,setData]=useState<any>(null),[name,setName]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);useEffect(()=>{api(`/join/${code}`).then(setData).catch(e=>setError(e.message));},[code]);async function join(body:unknown){setBusy(true);try{const r=await api(`/join/${code}`,body);onJoin(r.token);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}return <main className="join-page"><Brand large/><div className="join-art"><BriefcaseBusiness size={72}/><span><Fingerprint size={30}/></span></div><h1>Welkom bij de vestiging.</h1><p>Kies je naam of registreer je hieronder.<br/>Je geheime rol verschijnt alleen op jouw telefoon.</p>{error&&<Alert>{error}</Alert>}{data&&(data.registrationOpen||data.players.length>0)?<><div className="join-names">{data.players.map((p:any)=><button disabled={busy} key={p.id} onClick={()=>join({playerId:p.id})}><Avatar name={p.name} small/>{p.name}<ArrowRight size={16}/></button>)}</div>{data.registrationOpen&&<form onSubmit={(e:FormEvent)=>{e.preventDefault();join({name});}}><label>Jouw naam<input autoComplete="given-name" maxLength={24} value={name} onChange={e=>setName(e.target.value)} placeholder="Voornaam" required/></label><button className="btn full" disabled={busy}>Doe mee <ArrowRight size={18}/></button></form>}</>:data&&<div className="join-closed"><Hourglass size={36}/><p>Er zijn geen vrije namen beschikbaar. Gebruik je bestaande koppeling of vraag de organisator om een persoonlijke herstellink.</p></div>}<small>Gamblers Addiction · Houd je rol geheim.</small></main>;}
 
 function PlayerScreen({code,token,reset}:{code:string;token:string;reset:()=>void}){
   const {state:rawState,connected,error,offset,action}=useGame(code,token);
   const [wheelGate,setWheelGate]=useState<{id:string;balance:number}|null>(null);
   const onWheelStart=useCallback((id:string,balance:number)=>setWheelGate({id,balance}),[]),onWheelEnd=useCallback(()=>setWheelGate(null),[]);
   const s=presentWheelResult(rawState,wheelGate);
+  usePageIdentity(s?.me?.role??'phone');
   const [popup,setPopup]=useState<{taskId:number|null;kind:'task'|'theft'}|null>(null);
   const [jobs,setJobs]=useState(false),[notice,setNotice]=useState(''),[selected,setSelected]=useState<string|null>(null),[busy,setBusy]=useState(false);
   const now=useServerNow(offset,s?.pausedAt),message=useGameFeedback(s);
@@ -41,7 +43,7 @@ function PlayerScreen({code,token,reset}:{code:string;token:string;reset:()=>voi
     <FeedbackToast message={message}/>
     <header className="mobile-top"><Brand/><SoundToggle/><span className={`live-dot ${connected?'online':''}`} aria-label={connected?'Verbonden':'Verbinding herstellen'}/></header>
     <MoneyBar progress={s.companyProgress} red={s.reservedProgress}/><MoneyStatus company={s.company}/>
-    <div className="mobile-profile"><Avatar name={s.me.name}/><div><h1>{s.me.name}</h1>{spectator&&<DoorClosed size={19}/>}</div><span className={`role-badge ${spectator?'spectator':'employee'}`} aria-label={spectator?'Ontslagen':'Persoonlijk profiel'}>{spectator?<DoorClosed size={27}/>:<BriefcaseBusiness size={27}/>}</span></div>
+    <div className="mobile-profile"><Avatar name={s.me.name}/><div><h1>{s.me.name}</h1>{spectator&&<DoorClosed size={19}/>}</div><span className={`role-badge ${spectator?'spectator':role??'employee'}`} aria-label={spectator?'Ontslagen':role?roleNames[role]:'Persoonlijk profiel'}>{spectator?<DoorClosed size={27}/>:<RoleIcon role={role} size={29}/>}</span></div>
     {notice&&<Alert>{notice}</Alert>}
     {s.phase==='ended'?<><EndScene s={s}/><ResultSummary s={s}/></>:
       s.phase==='briefing'?<Briefing s={s}/>:
@@ -63,7 +65,7 @@ function PlayerScreen({code,token,reset}:{code:string;token:string;reset:()=>voi
         </section>}
         {!meeting&&<>
           <section className="mobile-section phone-panel phone-tasks"><h3><FileCheck2/> Mijn taken <span className="task-count">{s.myTasks.filter((t:any)=>t.completed).length}/{s.myTasks.length}</span></h3>
-            <div className="task-list">{s.myTasks.length===0?<p>Er staan geen taken open.</p>:s.myTasks.map((t:any)=><button className={`phone-task ${t.completed?'complete':''}`} key={t.id} disabled={t.completed||disabled} aria-label={`Opdracht ${t.id} openen`} onClick={()=>setPopup({taskId:t.id,kind:'task'})}><span><Icon name={t.icon} size={31}/></span><div className="task-symbol-line"><b>{t.label}</b><small>Laptop {t.id} · {t.completed?'Voltooid':'Code invoeren'}</small></div><span className="task-status">{t.completed?<Check size={21}/>:<ArrowRight size={21}/>}</span></button>)}</div>
+            <div className="task-list">{s.myTasks.length===0?<p>Er staan geen taken open.</p>:s.myTasks.map((t:any)=><button className={`phone-task ${t.completed?'complete':''}`} key={t.id} disabled={t.completed||disabled} aria-label={`Opdracht ${t.id} openen`} onClick={()=>setPopup({taskId:t.id,kind:'task'})}><span><Icon name={t.icon} size={31}/></span><div className="task-symbol-line"><b>{t.label}</b><small>Laptop {t.id} · {t.completed?'Voltooid':`${t.partsDone??0}/3 onderdelen · Code invoeren`}</small></div><span className="task-status">{t.completed?<Check size={21}/>:<ArrowRight size={21}/>}</span></button>)}</div>
           </section>
           <section className="mobile-section phone-panel map-section"><h3><MapPin/> Werkvloer</h3><FloorMap tasks={s.tasks} completed={s.myTasks.filter((t:any)=>t.completed).map((t:any)=>t.id)}/></section>
           {security&&<section className="mobile-section phone-panel security-section"><h3><ShieldCheck/> Incidenten & scans</h3><p className="scan-quota">{s.security.maxChecks-s.security.checks} scans over deze ronde</p><p className="play-help">Tik een gemelde laptop of kies er een op de kaart. Vergelijk tijden met wat je zag.</p>
