@@ -1,0 +1,106 @@
+{
+  "version": "0.1.0",
+  "built": "2026-10-18T14:01:13.519Z",
+  "files": [
+    {
+      "file": "src/shared/Config.luau",
+      "lines": 19,
+      "sha256": "c8edc223adef8b2cd7204f951219b0931bb13bd4d9d582eeda395b8c9ed00e73"
+    },
+    {
+      "file": "src/shared/Missions.luau",
+      "lines": 17,
+      "sha256": "5262b00096ea5caacd1461661b3f92b0b99446aa3374af869fcdf006596101d7"
+    },
+    {
+      "file": "src/shared/Types.luau",
+      "lines": 7,
+      "sha256": "a157d42f0cad329dd15f0a1921e2e8ec512390a335d42c0fd1bb3de0fdb0b5ad"
+    },
+    {
+      "file": "src/shared/Util.luau",
+      "lines": 26,
+      "sha256": "7db0c20a80918e422286b358aa891795e157b89967ccb5d92402d3dc5097cfc4"
+    },
+    {
+      "file": "src/server/Bootstrap.server.luau",
+      "lines": 73,
+      "sha256": "0f528e8040085aab8295071547c01d6ea9bf13ff7131bc2874fe64423ccdda67"
+    },
+    {
+      "file": "src/server/GrabService.luau",
+      "lines": 92,
+      "sha256": "cc433c76cee79d507ca3018d31f7ac54d370167b86f8619bcc9f99ac4dffc5fe"
+    },
+    {
+      "file": "src/server/InteractionService.luau",
+      "lines": 123,
+      "sha256": "4b39946826569e5ab7dbce0a40b422ab633c979f42fdc7301952a65f3e80d46e"
+    },
+    {
+      "file": "src/server/MissionService.luau",
+      "lines": 67,
+      "sha256": "7046528c90dbc9e6781a503b558e0d006a4418a4f4655fcfbcc02cdfbb581828"
+    },
+    {
+      "file": "src/server/PlayerRigService.luau",
+      "lines": 87,
+      "sha256": "9762c1bfca20dca1fe69f77814c3d7e8e1520a170c9019e6f84e6a87ffd77f7c"
+    },
+    {
+      "file": "src/server/RecoveryService.luau",
+      "lines": 70,
+      "sha256": "4a44fc43de3252462db89453088a9906383a678aedf870654ea7f6ad2cec449c"
+    },
+    {
+      "file": "src/server/WorldBuilder.luau",
+      "lines": 205,
+      "sha256": "edb89d478c43d86b28ff1a981d43121a45e3f85bc237587bcdb48dcc14fa4d48"
+    },
+    {
+      "file": "src/client/Bootstrap.client.luau",
+      "lines": 88,
+      "sha256": "170333c81ec7661c23698b79e84f764bc300a83ce924a00cebea9b61d937996c"
+    },
+    {
+      "file": "src/client/CameraController.luau",
+      "lines": 15,
+      "sha256": "f9e0add0c082959be51fbe9bd78f429182164d59f2460d89c2d5b9c01fae7d6a"
+    },
+    {
+      "file": "src/client/HandController.luau",
+      "lines": 41,
+      "sha256": "f2ba07917f42ef74ecd3516f0287e5c745672bc7c45f4c5cf0f44fc5e325eb50"
+    },
+    {
+      "file": "src/client/InputAdapter.luau",
+      "lines": 58,
+      "sha256": "16a8b8a60809d5615323b58d2fd79d763efb3a885cbf725250ae716de844e085"
+    },
+    {
+      "file": "src/client/InteractionController.luau",
+      "lines": 58,
+      "sha256": "eb487ee6b8436606450f42c1a08cf36b24199e07199cbf6a4e492ffbdf3ea1f5"
+    },
+    {
+      "file": "src/client/LocomotionController.luau",
+      "lines": 56,
+      "sha256": "b32a304a07e1eb51c8d756d6ff37f7464bc7b304fcaba44a3c0748fc23f2758d"
+    },
+    {
+      "file": "src/client/RemoteAvatarController.luau",
+      "lines": 28,
+      "sha256": "6e1658a29fd60d31a07f53f265affe5dc57583ab78a02aab106124b33fa181db"
+    },
+    {
+      "file": "src/client/UIController.luau",
+      "lines": 134,
+      "sha256": "506fccb9189d068babff0339f16f7f07c0e65592616b6098b25a38608dc84707"
+    },
+    {
+      "file": "src/client/VRTrackingController.luau",
+      "lines": 81,
+      "sha256": "1398c25cb8b5e7f142d4ee160f35ab3bd09a60484e8de57a9f0fa3de2239f9aa"
+    }
+  ]
+}

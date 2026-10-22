@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // getRandomValues also works on HTTP LAN addresses; randomUUID needs a secure context.
 export function uuid(){const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const s=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;}
 export async function copyText(text:string){if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);return;}catch{}}const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();document.execCommand('copy');area.remove();}
+export class ApiError extends Error {constructor(public code:string,message:string,public status:number){super(message);}}
 export async function api(path:string, body?:unknown, token?:string|null) {
   const res=await fetch(`/api${path}`,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const data=await res.json();if(!res.ok)throw new Error(data.message??'Verzoek mislukt.');return data;
+  const data=await res.json();if(!res.ok)throw new ApiError(data.error??'REQUEST',data.message??'Verzoek mislukt.',res.status);return data;
 }
 export function useGame(code:string|null,token:string|null=null) {
   const [state,setState]=useState<any>(null),[connected,setConnected]=useState(false),[error,setError]=useState(''),[offset,setOffset]=useState(0);

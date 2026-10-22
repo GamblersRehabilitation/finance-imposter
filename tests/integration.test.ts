@@ -1,3 +1,4 @@
+import {smallEconomy} from './economy-fixture';
 import { beforeEach,afterEach,it,expect } from 'vitest';
 import { WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
@@ -10,9 +11,38 @@ let runtime:ReturnType<typeof createApp>,base:string,dir:string,cookie:string;
 const sockets:WebSocket[]=[];
 async function req(path:string,body?:unknown,token?:string,admin=false){const res=await fetch(`${base}/api${path}`,{method:body===undefined?'GET':'POST',headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:`Bearer ${token}`} :{}),...(admin?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:res.status,data:await res.json()};}
 const act=(g:Game,action:string,data:any={},id=randomUUID())=>req(`/sessions/${g.code}/action`,{id,action,data},undefined,true);
-async function setup(){const g=runtime.engine.create('Integratietest');await act(g,'demo');return runtime.engine.get(g.code);}
+async function setup(){const g=runtime.engine.create('Integratietest');await act(g,'demo');smallEconomy(runtime.engine,g.code);return runtime.engine.get(g.code);}
 async function socket(g:Game,token?:string,admin=false):Promise<{ws:WebSocket;states:any[]}>{const ws=new WebSocket(`${base.replace('http','ws')}/ws`,admin?{headers:{Cookie:cookie}}:{});sockets.push(ws);const states:any[]=[];return new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('WebSocket timeout')),4000);ws.on('open',()=>ws.send(JSON.stringify({type:'auth',code:g.code,...(token?{token}:{})})));ws.on('message',m=>{const msg=JSON.parse(m.toString());if(msg.type==='state'){states.push(msg.state);clearTimeout(timeout);resolve({ws,states});}});ws.on('error',reject);});}
 const eventually=async(fn:()=>boolean)=>{for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Verwachte realtime update ontbreekt.');};
+
+it('REST-scans vereisen steeds de code van de gekozen laptop, ook na een eerdere goede scan',async()=>{
+ const g=await setup(),security=g.players.find(p=>p.role==='security')!,token=(await req(`/join/${g.code}`,{playerId:security.id})).data.token;
+ await act(g,'start');const scan=(data:any,id=randomUUID())=>req(`/sessions/${g.code}/action`,{id,action:'investigate',data},token);
+ for(const data of [{laptopId:1},{laptopId:1,code:g.laptopCodes[2]}]){const r=await scan(data);expect(r.status).toBe(403);expect(r.data.error).toBe('CODE');}
+ expect(runtime.engine.get(g.code).investigations).toHaveLength(0);
+ const id=randomUUID(),data={laptopId:1,code:g.laptopCodes[1]},first=await scan(data,id),again=await scan(data,id);
+ expect(first.status).toBe(200);expect(again.data.investigation).toEqual(first.data.investigation);expect(again.data.state.security.checks).toBe(1);
+ expect(first.data.state).not.toHaveProperty('laptopCodes');expect((await scan({laptopId:1})).status).toBe(403);
+ expect((await scan({laptopId:2,code:g.laptopCodes[2]})).status).toBe(200);
+ expect((await scan({laptopId:3,code:g.laptopCodes[3]})).status).toBe(409);
+});
+
+it('leegt alle sessies alleen als admin met exacte bevestiging en bewaart adminlogin en laptopcodes',async()=>{
+ const g=await setup(),codes=g.laptopCodes,worker=g.players[0];
+ const token=(await req(`/join/${g.code}`,{playerId:worker.id})).data.token;
+ const device=(await req(`/sessions/${g.code}/device`,{kind:'laptop',laptopId:1},undefined,true)).data.token;
+ await act(g,'start');const peer=await socket(g,token),closed=new Promise<void>(resolve=>peer.ws.once('close',()=>resolve()));
+ expect((await req('/admin/reset-sessions',{confirm:'ALLE SESSIES'},token)).status).toBe(403);
+ expect((await req('/admin/reset-sessions',{confirm:'ja'},undefined,true)).status).toBe(400);
+ expect((await req(`/sessions/${g.code}`,undefined,token)).status).toBe(200);
+ const cleared=await req('/admin/reset-sessions',{confirm:'ALLE SESSIES'},undefined,true);expect(cleared.data).toEqual({ok:true,deleted:1});await closed;
+ expect((await req('/admin/sessions',undefined,undefined,true)).data).toEqual([]);
+ expect((await req(`/sessions/${g.code}`,undefined,token)).status).toBe(401);
+ expect((await req(`/sessions/${g.code}`,undefined,device)).status).toBe(401);
+ expect(runtime.store.db.prepare('SELECT * FROM requests').all()).toEqual([]);
+ const fresh=(await req('/admin/sessions',{title:'Nieuwe lege lobby'},undefined,true)).data;
+ expect((await req(`/sessions/${fresh.code}`,undefined,undefined,true)).data.laptopCodes).toEqual(codes);
+});
 beforeEach(async()=>{dir=mkdtempSync(join(tmpdir(),'finance-test-'));runtime=createApp({databasePath:join(dir,'test.sqlite'),adminPassword:'test-password-long',serveStatic:false});await new Promise<void>(r=>runtime.server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(runtime.server.address() as any).port}`;const res=await fetch(`${base}/api/admin/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'test-password-long'})});cookie=res.headers.get('set-cookie')!.split(';')[0];});
 afterEach(()=>{sockets.splice(0).forEach(s=>s.terminate());runtime.close();rmSync(dir,{recursive:true,force:true});});
 it('houdt 14 spelers en 10 extra apparaten realtime gesynchroniseerd zonder geheime data te lekken',async()=>{const g=await setup();const playerTokens=await Promise.all(g.players.map(async p=>{const r=await req(`/join/${g.code}`,{playerId:p.id});expect(r.status).toBe(200);return r.data.token;}));const players=await Promise.all(playerTokens.map(t=>socket(g,t)));const devices=await Promise.all(Array.from({length:10},async(_,i)=>{const kind=i<8?'laptop':i===8?'board':'emergency';const r=await req(`/sessions/${g.code}/device`,{kind,...(kind==='laptop'?{laptopId:i+1}:{})},undefined,true);expect(r.status).toBe(200);return {token:r.data.token,peer:await socket(g,r.data.token)};}));await act(g,'start');await eventually(()=>players.every(p=>p.states.at(-1)?.phase==='playing')&&devices.every(d=>d.peer.states.at(-1)?.phase==='playing'));
@@ -41,9 +71,9 @@ it('koppelt telefoon en terminal realtime, bewaart de poging na herstart en beta
   expect(runtime.engine.get(g.code).laptopCodes).toEqual(codes);
   expect(runtime.engine.create().laptopCodes).toEqual(codes);
   const reconnected=await socket(g,token);expect(reconnected.states[0].terminalAttempt.id).toBe(attemptId);
-  for(let stage=0;stage<2;stage++){const t=runtime.engine.get(g.code).terminalAttempts[0];const part=await req(`/sessions/${g.code}/action`,{id:randomUUID(),action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,answer:t.puzzle.answer}},deviceToken);expect(part.status).toBe(200);expect(part.data.completed).toBe(false);expect(runtime.engine.get(g.code).companyCash).toBe(10);}
+  for(let stage=0;stage<2;stage++){const t=runtime.engine.get(g.code).terminalAttempts[0];const part=await req(`/sessions/${g.code}/action`,{id:randomUUID(),action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,...(t.puzzle.matching?{matches:t.puzzle.matching.solution}:{answer:t.puzzle.answer})}},deviceToken);expect(part.status).toBe(200);expect(part.data.completed).toBe(false);expect(runtime.engine.get(g.code).companyCash).toBe(10);}
   const t=runtime.engine.get(g.code).terminalAttempts[0];
-  const id=randomUUID(),body={id,action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,matches:t.puzzle.matching!.solution}};
+  const id=randomUUID(),body={id,action:'terminal-confirm',data:{attemptId,challengeId:t.challengeId,...(t.puzzle.matching?{matches:t.puzzle.matching.solution}:{answer:t.puzzle.answer})}};
   const results=await Promise.all([req(`/sessions/${g.code}/action`,body,deviceToken),req(`/sessions/${g.code}/action`,body,deviceToken)]);
   expect(results.map(r=>r.status)).toEqual([200,200]);expect(runtime.engine.get(g.code).companyCash).toBe(13);
   expect((await req(`/sessions/${g.code}/action`,{...body,id:randomUUID()},deviceToken)).status).toBe(409);

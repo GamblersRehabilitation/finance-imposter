@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Check, Plus, RotateCcw, Trash2, UsersRound, X } from 'lucide-react';
+import { Check, Plus, RotateCcw, Trash2, UsersRound, X, ScanLine, Smartphone, Hourglass, ArrowRight } from 'lucide-react';
 import { api } from './api';
 import { Avatar, Panel, RoleIcon, roleNames } from './ui';
 import type { Game } from '../server/types';
 
 type Act=(name:string,data?:any)=>Promise<any>;
-export function JoinQR({code,size=220}:{code:string;size?:number}){
+export function JoinQR({code,size=220,visual=false}:{code:string;size?:number;visual?:boolean}){
   const [qr,setQr]=useState('');const url=`${location.origin}/play/${code}`;
   useEffect(()=>{let live=true;QRCode.toDataURL(url,{width:size,margin:2,color:{dark:'#503d31',light:'#ffffff'}}).then(q=>{if(live)setQr(q);});return()=>{live=false;};},[url,size]);
-  return <div className="join-qr">{qr&&<img src={qr} alt="Scan om mee te spelen" width={size} height={size}/>}<a href={url} target="_blank" rel="noreferrer">{location.host}/play/{code}</a><strong>{code}</strong></div>;
+  return <div className="join-qr">{qr&&<img src={qr} alt="Scan om mee te spelen" width={size} height={size}/>}<a href={url} target="_blank" rel="noreferrer">{visual?<ScanLine/>:<>{location.host}/play/{code}</>}</a><strong>{code}</strong></div>;
 }
 export function LobbyControls({s,act,busy}:{s:Game;act:Act;busy:boolean}){
   const [name,setName]=useState('');const special=s.config.roles.manager+s.config.roles.security+s.config.roles.gambler;
@@ -20,12 +20,12 @@ export function LobbyControls({s,act,busy}:{s:Game;act:Act;busy:boolean}){
     <div className="lobby-role-counts">{(['manager','security','gambler'] as const).map(role=><label key={role}><RoleIcon role={role} size={28}/><span>{roleNames[role]}</span><input aria-label={`Aantal ${roleNames[role]}`} type="number" min="0" max={role==='manager'?1:100000} value={s.config.roles[role]} disabled={busy} onChange={e=>{const value=Number(e.target.value);if(Number.isInteger(value)&&value>=0)void act('role-counts',{roles:{manager:s.config.roles.manager,security:s.config.roles.security,gambler:s.config.roles.gambler,[role]:value}});}}/></label>)}<div><RoleIcon role="employee" size={28}/><span>Werknemers</span><strong>{Math.max(0,s.players.length-special)}</strong><small>Alle overige deelnemers</small></div></div>
     <p className="muted">{special>s.players.length?`Nog ${special-s.players.length} deelnemers nodig, of verlaag de speciale rollen.`:'Start verdeelt alle rollen en taken tegelijk. Hier zie je alleen de aantallen.'}</p></div></div></Panel>;
 }
-export function BoardLobby({s}:{s:any}){return <section className="board-lobby"><div><h1>Doe mee.</h1><JoinQR code={s.code} size={300}/><p>Scan · kies je naam · wacht op de start</p></div><div><h2><UsersRound/> {s.lobby.joined} deelnemers</h2><div className="board-players">{s.lobby.players.map((p:any)=><div key={p.id} className={p.admitted?'admitted':'waiting'}><Avatar name={p.name}/><strong>{p.name}</strong>{p.admitted?<Check size={20}/>:<span className="waiting-dot"/>}</div>)}</div><p>{s.lobby.admitted} toegelaten · {s.lobby.joined-s.lobby.admitted} wachten</p></div></section>;}
+export function BoardLobby({s}:{s:any}){return <section className="board-lobby visual-board-lobby"><div><div className="visual-join-flow"><ScanLine/><ArrowRight/><Smartphone/></div><JoinQR code={s.code} size={300} visual/></div><div><h2 aria-label="Aantal deelnemers"><UsersRound/> {s.lobby.joined}</h2><div className="board-players">{s.lobby.players.map((p:any)=><div key={p.id} className={p.admitted?'admitted':'waiting'}><Avatar name={p.name}/><strong>{p.name}</strong>{p.admitted?<Check size={20}/>:<Hourglass size={20}/>}</div>)}</div><div className="visual-lobby-counts"><Check/>{s.lobby.admitted}<Hourglass/>{s.lobby.joined-s.lobby.admitted}</div></div></section>;}
 
 export function LobbyManagement({sessions,selected,phase,busy,onDeleted,act}:{sessions:any[];selected:string|null;phase?:string;busy:boolean;onDeleted:(code:string)=>void;act:Act}){
   const [target,setTarget]=useState<any>(null),[confirmCode,setConfirmCode]=useState(''),[deleting,setDeleting]=useState(false),[error,setError]=useState('');
   async function remove(){if(!target)return;setDeleting(true);setError('');try{await api(`/admin/sessions/${target.code}/delete`,{confirmCode});onDeleted(target.code);setTarget(null);setConfirmCode('');}catch(e){setError((e as Error).message);}finally{setDeleting(false);}}
-  return <><Panel title="Lobbybeheer" eyebrow="OPNIEUW SPELEN & OPRUIMEN">
+  return <><Panel title="Lobbybeheer" eyebrow="OPNIEUW SPELEN & OPRUIMEN"><p className="muted">Afgelopen sessies worden automatisch verwijderd zodra je een nieuwe lobby maakt. Tot dan kun je opnieuw spelen met dezelfde deelnemers.</p>
     {phase==='ended'&&<div className="replay-lobby"><p>Speel opnieuw met dezelfde deelnemers en gekoppelde apparaten. Resultaten worden gewist; de volgende start verdeelt de rollen opnieuw.</p><button className="btn" disabled={busy} onClick={()=>act('replay')}><RotateCcw size={18}/> Opnieuw met deze deelnemers</button></div>}
     <div className="lobby-list">{sessions.map(item=>{const status=item.code===selected?phase:item.phase,removable=status==='lobby'||status==='ended';return <div key={item.code}><span><strong>{item.title}</strong><small>{item.code} · {item.players} deelnemers · {status==='ended'?'Afgelopen':status==='lobby'?'Lobby':'Spel actief'}</small></span><button className="btn light" aria-label={`Verwijder lobby ${item.code}`} disabled={busy||!removable} title={removable?'Lobby verwijderen':'Beëindig eerst het spel'} onClick={()=>{setTarget(item);setConfirmCode('');setError('');}}><Trash2 size={17}/> Verwijderen</button></div>;})}</div>
   </Panel>{target&&<div className="modal-backdrop"><section className="delete-lobby-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title"><button className="icon-only btn light" aria-label="Annuleren" disabled={deleting} onClick={()=>setTarget(null)}><X/></button><h2 id="delete-title">Lobby {target.code} verwijderen?</h2><p>Je wist deze lobby, deelnemers en resultaten definitief. Bijbehorende telefoon- en schermkoppelingen vervallen.</p><label>Typ {target.code} ter bevestiging<input autoFocus value={confirmCode} onChange={e=>setConfirmCode(e.target.value)} inputMode="numeric"/></label>{error&&<p role="alert">{error}</p>}<button className="btn red full" disabled={deleting||confirmCode!==target.code} onClick={remove}><Trash2 size={17}/>{deleting?'Verwijderen…':'Definitief verwijderen'}</button></section></div>}</>;

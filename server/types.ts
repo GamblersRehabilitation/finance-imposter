@@ -9,25 +9,26 @@ export interface Config {
   zeroCash: 'continue' | 'draw' | null;
   dismissedGambler: 'shares' | 'excluded' | null;
   moneyLaptops: number[]; testMode: boolean;
-  introVideoUrl: string | null;
+  introVideoUrl: string | null; autoEconomy:boolean;
 }
-export interface Player { id: string; name: string; role: Role | null; dismissed: boolean; claimed: boolean; introSeen: boolean; checks: number; admitted: boolean }
+export interface Player { id: string; name: string; role: Role | null; dismissed: boolean; claimed: boolean; introSeen: boolean; checks: number; admitted: boolean; visualPractice?:{pairing?:boolean;budget?:boolean;games?:number[];theft?:string[];wheel?:boolean} }
 export interface LaptopTask { id: number; icon: string; label: string; reward: number; module: string }
-export interface Completion { playerId: string; laptopId: number; reward: number; at: number }
+export interface Completion { cycle?:number; playerId: string; laptopId: number; reward: number; at: number }
 export interface Theft { id: string; playerId: string; laptopId: number; amount: number; collectedAt: number; debitAt: number; alertAt: number; debited: boolean; alerted: boolean; redCleared?:boolean }
 export interface Investigation { id: string; playerId: string; laptopId: number; at: number; round: number; transactionTimes: number[]; failures?: number[] }
 export interface Ledger { id: string; kind: string; amount: number; company: number; gamblers: number; at: number; detail: string }
-export interface Puzzle { title: string; expression: string; choices: number[]; answer: number; kind?: string; instruction?: string; facts?: number[]; details?:Record<string,number|number[]>;review?:{expectedLabel:string;actualLabel:string;documents:{label:string;expected:number;actual:number}[]};matching?:{items:{label:string;amount:number}[];accounts:{label:string;amount:number}[];solution:number[]} }
-export interface TheftState {module:'lockpick'|'diversion';version?:2;round:number;step:number;loot:number;target:number;nonce:string;lock?:{startedAt:number;offset:number;speed:number;target:number;width:number};pipes?:import('../src/theftRules.js').PipeBoard}
-export interface TerminalAttempt { id: string; playerId: string; laptopId: number; kind: 'task' | 'theft'; round: number; expiresAt: number; taskExpiresAt?:number; puzzle: Puzzle;taskStage?:number;challengeId?:string;taskFinished?:boolean; theft?:TheftState }
-export interface GameSummary { endedAt:number; companyCash:number; gamblerCash:number; players:{id:string;name:string;role:Role|null;dismissed:boolean;completed:number;assigned:number;won:boolean}[] }
+export interface Puzzle { title: string; expression: string; choices: number[]; answer: number; kind?: string; transfers?:{reference:number;amount:number}[];invoices?:{label:string;days:number;amount:number}[];instruction?: string; facts?: number[]; details?:Record<string,number|number[]>;review?:{expectedLabel:string;actualLabel:string;documents:{label:string;expected:number;actual:number}[]};matching?:{items:{label:string;amount:number}[];accounts:{label:string;amount:number}[];solution:number[]} }
+export interface TheftState {module:'lockpick'|'diversion';version?:2;pipeStartedAt?:number;pipeDeadline?:number;round:number;step:number;loot:number;target:number;nonce:string;lock?:{startedAt:number;offset:number;speed:number;target:number;width:number};pipes?:import('../src/theftRules.js').PipeBoard}
+export interface TerminalAttempt { id: string; playerId: string; laptopId: number; kind: 'task' | 'theft'; round: number; expiresAt: number; taskExpiresAt?:number;taskDurationMs?:number; visualMode?:boolean;practicePending?:boolean;tutorialPausedAt?:number;tutorialExpiresAt?:number; puzzle: Puzzle;sequence?:number[];taskStage?:number;challengeId?:string;taskFinished?:boolean; theft?:TheftState }
+export interface GameSummary { endedAt:number;gamblerWealth?:number; companyCash:number; gamblerCash:number; players:{id:string;name:string;role:Role|null;dismissed:boolean;completed:number;assigned:number;won:boolean}[] }
 export interface Presence {kind:Actor['kind'];playerId?:string;laptopId?:number;lastSeen:number}
 export interface Game {
   rulesVersion?: number;
   id: string; code: string; title: string; revision: number; createdAt: number; phase: Phase; pausedAt: number | null;
   config: Config; players: Player[]; tasks: LaptopTask[]; assignments: Record<string, number[]>; completions: Completion[];
-  laptopCodes: Record<number, string>; terminalAttempts: TerminalAttempt[];taskProgress:Record<string,number>;
+  financeVersion?:number;floorPlan:import('../src/floorPlanRules.js').FloorPlan;taskCycles:Record<string,number>;taskSequences:Record<string,number[]>;taskDecks:Record<string,import('../src/financeModes.js').FinanceDeck>;laptopCodes: Record<number, string>; terminalAttempts: TerminalAttempt[];taskProgress:Record<string,number>;
   companyCash: number; gamblerCash: number; theftUnlocked: boolean;
+  spinsThisRound:Record<string,number>; purchases:{id:string;itemId:string;playerId:string;price:number;at:number}[];
   thefts: Theft[]; investigations: Investigation[]; ledger: Ledger[];
   meeting: {phase: MeetingPhase; source: 'automatic' | 'emergency' | 'admin' | null; startedAt: number | null; deadline: number | null; dismissedId: string | null};
   round: number; nextMeetingAt: number | null; cooldownUntil: number | null;

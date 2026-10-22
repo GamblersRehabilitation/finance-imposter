@@ -1,6 +1,6 @@
 import {randomInt} from 'node:crypto';
 import type {Puzzle} from './types.js';
-export const financialTasks=[['calculator','Begroting'],['receipt','Factuurcontrole'],['exchange','Valuta wisselen'],['piggy','Spaarrente'],['shield','Verzekeren'],['banknotes','Kascontrole'],['chart','Winst berekenen'],['portfolio','Portefeuille verdelen']] as const;
+export {financialTasks} from '../src/financeCatalog.js';
 const odd=(min:number,max:number)=>randomInt(min,max)*2+1;
 export function makePuzzle(laptopId:number):Puzzle{
  let title='',expression='',answer=0,instruction='',details:Puzzle['details']={};
@@ -12,9 +12,13 @@ export function makePuzzle(laptopId:number):Puzzle{
  case 5:{const damage=odd(32,100),excess=[13,15,17,23,25][randomInt(5)],limit=damage;title='Verzekeren';answer=damage-excess;expression=`Schade €${damage} − eigen risico €${excess} = € ?`;details={damage,excess,limit};instruction='Eigen risico betaal je zelf. Kies wat de verzekeraar betaalt: schade min eigen risico.';break;}
  case 6:{const denominations=[20,10,5,2,1],counts=[randomInt(1,4),randomInt(1,5),odd(0,3),randomInt(1,5),randomInt(3)*2];title='Kascontrole';answer=denominations.reduce((sum,n,i)=>sum+n*counts[i],0);expression=denominations.map((n,i)=>`${counts[i]} × €${n}`).join(' + ');details={denominations,counts};instruction='Tel biljetten én munten. Vul per vak het aantal in en verzegel het totaal.';break;}
  case 7:{const costs=[odd(30,75),odd(12,35),odd(3,18)],profit=odd(9,49),revenue=costs.reduce((n,x)=>n+x,0)+profit;title='Winst berekenen';answer=profit;expression=`€${revenue} omzet − ${costs.map(n=>`€${n}`).join(' − ')} kosten = € ?`;details={revenue,costs};instruction='Trek salaris, huur en overige kosten van de omzet af. Boek de resterende winst.';break;}
- default:{const total=randomInt(3,12)*100,bondPercent=[35,45,55,65,75][randomInt(5)];title='Portefeuille verdelen';answer=total*bondPercent/100;expression=`€${total} vermogen; ${bondPercent}% obligaties, ${100-bondPercent}% aandelen`;details={total,bondPercent};instruction='Bereken het obligatiebedrag uit het totale vermogen en de doelverdeling.';}
+ case 8:{const total=randomInt(3,12)*100,bondPercent=[35,45,55,65,75][randomInt(5)];title='Portefeuille verdelen';answer=total*bondPercent/100;expression=`€${total} vermogen; ${bondPercent}% obligaties, ${100-bondPercent}% aandelen`;details={total,bondPercent};instruction='Bereken het obligatiebedrag uit het totale vermogen en de doelverdeling.';}
  }
+ if(laptopId===9){const gross=odd(150,300),tax=odd(20,45),pension=odd(4,13);title='Salariscontrole';answer=gross-tax-pension;details={gross,tax,pension};expression=`€${gross} − €${tax} − €${pension} = ?`;instruction='Trek belasting en pensioen af van het brutoloon. Kies het nettoloon.';}
+ if(laptopId===10){const net=randomInt(2,10)*100,rate=21;title='Btw boeken';answer=net+net*rate/100;details={net,rate};expression=`€${net} + ${rate}% = ?`;instruction='Boek het factuurtotaal: bedrag zonder btw plus 21% btw.';}
+ if(laptopId===11){const a=randomInt(4),b=(a+randomInt(1,4))%4,first=Math.min(a,b),second=Math.max(a,b),amount=odd(20,80),reference=randomInt(100,500);const transfers=Array.from({length:4},(_,i)=>({reference:i===a||i===b?reference:reference+10+i,amount:i===a||i===b?amount:amount+13+i*10}));return {title:'Dubbele betalingen',kind:'duplicate',expression:'Zoek de twee gelijke boekingen.',instruction:'Selecteer de twee betalingen met dezelfde referentie én hetzelfde bedrag.',choices:[],answer:first*4+second,transfers};}
+ if(laptopId===12){const days=[1,3,5],orders=[0,1,2];for(let i=2;i>0;i--){const j=randomInt(i+1);[orders[i],orders[j]]=[orders[j],orders[i]];}const invoices=orders.map((n,i)=>({label:`Factuur ${104+i*13}`,days:days[n],amount:odd(20,80)}));return {title:'Betaalvolgorde',kind:'priority',expression:'Welke factuur vervalt het eerst?',instruction:'Kies de factuur die het eerst betaald moet worden. Kijk naar het aantal dagen tot de vervaldatum.',choices:[0,1,2],answer:orders.indexOf(0),invoices};}
  const alternatives=new Set([answer]);while(alternatives.size<4){const n=answer+[3,-3,5,-5,7,-7][randomInt(6)];if(n>=0)alternatives.add(n);}
  const choices=[...alternatives];for(let i=choices.length-1;i>0;i--){const j=randomInt(i+1);[choices[i],choices[j]]=[choices[j],choices[i]];}
- return {title,expression,answer,choices,kind:['budget','invoice','exchange','saving','claim','cash','profit','portfolio'][laptopId-1],instruction,details};
+ return {title,expression,answer,choices,kind:['budget','invoice','exchange','saving','claim','cash','profit','portfolio','payroll','vat'][laptopId-1],instruction,details};
 }

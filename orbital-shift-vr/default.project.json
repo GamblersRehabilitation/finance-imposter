@@ -1,0 +1,9 @@
+{
+  "name": "Orbital Shift VR",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {"OrbitalShiftVR": {"Shared": {"$path": "src/shared"}}},
+    "ServerScriptService": {"OrbitalShiftVR": {"$path": "src/server"}},
+    "StarterPlayer": {"StarterPlayerScripts": {"OrbitalShiftVR": {"$path": "src/client"}}}
+  }
+}

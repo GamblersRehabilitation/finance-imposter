@@ -1,3 +1,4 @@
+import {smallConfig} from './economy-fixture';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -6,13 +7,28 @@ import { Store } from '../server/store';
 let state:string|undefined,version=0,base:string,server:Server,cookie:string;
 const repository:SnapshotRepository={async load(initial){state??=initial;return {version,state};},async save(expected,next){if(expected!==version)return false;state=next;version++;return true;}};
 async function request(path:string,body?:any,token?:string){const r=await fetch(base+'/api'+path,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie??'',...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')};}
+async function smallCloud(code:string){const g=(await request(`/sessions/${code}`)).data;for(const [action,data] of [['configure',{config:smallConfig(g.config)}],['rewards',{rewards:Array(8).fill(3)}]])await request(`/sessions/${code}/action`,{id:randomUUID(),action,data});}
 beforeEach(async()=>{state=undefined;version=0;cookie='';const handler=cloudHandler(repository,'test-password-cloud');server=createServer(handler);await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(server.address() as any).port}`;const r=await request('/admin/login',{password:'test-password-cloud'});expect(r.status).toBe(200);cookie=r.cookie!.split(';')[0];});
 afterEach(async()=>{await new Promise<void>(r=>server.close(()=>r()));});
+it('bewaart de lobbyplattegrond en spelkeuze over onafhankelijke cloud-aanroepen',async()=>{const code=(await request('/admin/sessions',{title:'Kaarttest'})).data.code,first=(await request(`/sessions/${code}`)).data;const plan=structuredClone(first.floorPlan);plan.laptops[0]={...plan.laptops[0],x:3,y:2,gameId:12};const changed=await request(`/sessions/${code}/action`,{id:randomUUID(),action:'floor-plan',data:{plan}});expect(changed.status).toBe(200);const restored=(await request(`/sessions/${code}`)).data;expect(restored.floorPlan).toEqual(plan);expect(restored.tasks[0]).toMatchObject({label:'Betaalvolgorde',module:'finance-12'});});
+it('behoudt online één algemene kaart na verwijderen van de laatste lobby en wist de sessiegegevens',async()=>{const code=(await request('/admin/sessions',{title:'Kaart bewaren'})).data.code,first=(await request(`/sessions/${code}`)).data,plan={...first.floorPlan,rows:18};expect((await request(`/sessions/${code}/action`,{id:randomUUID(),action:'floor-plan',data:{plan}})).status).toBe(200);expect((await request(`/admin/sessions/${code}/delete`,{confirmCode:code})).status).toBe(200);const raw=JSON.parse(state!);expect(raw.sessions).toEqual([]);expect(raw.requests).toEqual([]);expect(raw.credentials.every((c:any)=>c.session_id===null)).toBe(true);expect(raw.settings).toHaveLength(1);const next=(await request('/admin/sessions',{title:'Dezelfde kaart'})).data.code;expect((await request(`/sessions/${next}`)).data.floorPlan).toEqual(plan);});
+it('ruimt cloudgegevens en tokens op bij een nieuwe sessie, terwijl laptopcodes behouden blijven',async()=>{
+ const old=(await request('/admin/sessions',{title:'Oud spel'})).data.code;
+ const act=(action:string)=>request(`/sessions/${old}/action`,{id:randomUUID(),action});await act('demo');
+ const g=(await request(`/sessions/${old}`)).data,token=(await request(`/join/${old}`,{playerId:g.players[0].id})).data.token;
+ await act('start');await act('end');
+ const next=(await request('/admin/sessions',{title:'Volgend spel'})).data.code;
+ expect((await request(`/sessions/${old}`,undefined,token)).status).toBe(401);
+ expect((await request(`/sessions/${next}`)).data.laptopCodes).toEqual(g.laptopCodes);
+ expect((await request('/admin/sessions')).data).toHaveLength(1);
+ const reset=await request('/admin/reset-sessions',{confirm:'ALLE SESSIES'});expect(reset.status).toBe(200);
+ expect((await request('/admin/sessions')).data).toEqual([]);
+});
 it('deelt sessies, credentials en vaste laptopcodes tussen onafhankelijke function-instanties',async()=>{const r=await request('/admin/sessions',{title:'Cloudtest'});expect(r.status).toBe(200);const first=await request(`/sessions/${r.data.code}`);expect(first.status).toBe(200);const other=createServer(cloudHandler(repository,'test-password-cloud'));await new Promise<void>(r=>other.listen(0,'127.0.0.1',r));try{const response=await fetch(`http://127.0.0.1:${(other.address() as any).port}/api/sessions/${r.data.code}`,{headers:{Cookie:cookie}});expect(response.status).toBe(200);expect((await response.json()).laptopCodes).toEqual(first.data.laptopCodes);}finally{await new Promise<void>(r=>other.close(()=>r()));}});
 it('bewaart opnieuw spelen en lobbyverwijdering over losse cloud-aanroepen',async()=>{
  const code=(await request('/admin/sessions',{title:'Herhaaltest'})).data.code;
  const act=(action:string)=>request(`/sessions/${code}/action`,{id:randomUUID(),action});
- await act('demo');const lobby=(await request(`/sessions/${code}`)).data;
+ await act('demo');await smallCloud(code);const lobby=(await request(`/sessions/${code}`)).data;
  const token=(await request(`/join/${code}`,{playerId:lobby.players[0].id})).data.token;
  await act('start');await act('end');expect((await act('replay')).status).toBe(200);
  const phone=await request(`/sessions/${code}`,undefined,token);expect(phone.status).toBe(200);expect(phone.data.phase).toBe('lobby');expect(phone.data.me.role).toBeNull();
@@ -22,15 +38,16 @@ it('bewaart opnieuw spelen en lobbyverwijdering over losse cloud-aanroepen',asyn
 });
 it('verliest geen mutaties bij gelijktijdige verzoeken en verwerkt een dubbele taak eenmaal',async()=>{const created=await request('/admin/sessions',{title:'Parallel'}),code=created.data.code;
   const command=(action:string,data:any={},id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data});
-  await command('demo');await command('start');const g=(await request(`/sessions/${code}`)).data,worker=g.players.find((p:any)=>p.role==='employee'),laptopId=g.assignments[worker.id][0],id=randomUUID();
+  await command('demo');await smallCloud(code);await command('start');const g=(await request(`/sessions/${code}`)).data,worker=g.players.find((p:any)=>p.role==='employee'),laptopId=g.assignments[worker.id][0],id=randomUUID();
   const responses=await Promise.all([command('test-task',{playerId:worker.id,laptopId},id),command('test-task',{playerId:worker.id,laptopId},id),...g.players.slice(0,8).map((p:any)=>request(`/join/${code}`,{playerId:p.id}))]);
   expect(responses.every(r=>r.status===200)).toBe(true);const result=(await request(`/sessions/${code}`)).data;expect(result.companyCash).toBe(13);expect(result.completions).toHaveLength(1);expect(result.players.filter((p:any)=>p.claimed)).toHaveLength(8);
 });
 it('bewaart rate limits tussen function-aanroepen en retourneert de cloudtransportkeuze',async()=>{const health=await request('/health');expect(health.data.transport).toBe('poll');for(let i=0;i<9;i++)expect((await request('/admin/login',{password:'wrong'})).status).toBe(401);expect((await request('/admin/login',{password:'wrong'})).status).toBe(429);});
+it('reserveert online drie kaarten eenmaal en bewaart de persoonlijke stapel tussen function-aanroepen',async()=>{const code=(await request('/admin/sessions',{title:'Spelstapel'})).data.code;const cmd=(action:string,data:any={},token?:string,id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data},token);await cmd('demo');let g=(await request(`/sessions/${code}`)).data;const worker=g.players.find((p:any)=>p.role==='employee');await cmd('assign',{playerId:worker.id,ids:[1,2]});const token=(await request(`/join/${code}`,{playerId:worker.id})).data.token;await cmd('start');const id=randomUUID(),data={kind:'task',laptopId:1,code:g.laptopCodes[1]};const both=await Promise.all([cmd('terminal-begin',data,token,id),cmd('terminal-begin',data,token,id)]);expect(both.every(r=>r.status===200)).toBe(true);g=(await request(`/sessions/${code}`)).data;const sequence=g.terminalAttempts[0].sequence;expect(new Set(sequence).size).toBe(3);expect(g.taskDecks[worker.id].remaining).toHaveLength(17);await cmd('terminal-cancel',{},token);await cmd('terminal-begin',data,token);g=(await request(`/sessions/${code}`)).data;expect(g.terminalAttempts[0].sequence).toEqual(sequence);expect(g.taskDecks[worker.id].remaining).toHaveLength(17);await cmd('terminal-cancel',{},token);await cmd('terminal-begin',{...data,laptopId:2,code:g.laptopCodes[2]},token);g=(await request(`/sessions/${code}`)).data;expect(g.taskDecks[worker.id].remaining).toHaveLength(14);expect(g.terminalAttempts[0].sequence.every((mode:number)=>!sequence.includes(mode))).toBe(true);});
 it('herstelt een SQLite-snapshot inclusief request-ID en toegangssleutels',()=>{const a=new Store(':memory:'),b=new Store(':memory:');try{a.restore(state!);const token=a.issue({kind:'admin'},null);const exported=a.snapshot();b.restore(exported);expect(b.identify(token)?.actor.kind).toBe('admin');expect(b.laptopCodes()).toEqual(a.laptopCodes());expect(b.snapshot()).toBe(exported);}finally{a.close();b.close();}});
 it('reserveert online één gedeelde draai en boekt na function-herstart exact eenmaal',async()=>{const created=await request('/admin/sessions',{title:'Cloudrad'}),code=created.data.code;
  const command=(action:string,data:any={},token?:string,id=randomUUID())=>request(`/sessions/${code}/action`,{id,action,data},token);
- await command('demo');const lobby=(await request(`/sessions/${code}`)).data;await command('configure',{config:{...lobby.config,gamblerGoal:100}});
+ await command('demo');await smallCloud(code);const lobby=(await request(`/sessions/${code}`)).data;await command('configure',{config:{...lobby.config,gamblerGoal:100}});
  const gamblers=lobby.players.filter((p:any)=>p.role==='gambler'),tokens=await Promise.all(gamblers.map((p:any)=>request(`/join/${code}`,{playerId:p.id})));await command('start');await command('test-pot',{amount:10});
  const attempts=await Promise.all(tokens.map(r=>command('gamble',{stake:5},r.data.token)));expect(attempts.map(r=>r.status).sort()).toEqual([200,409]);
  const pending=(await request(`/sessions/${code}`)).data;expect(pending.gamblerCash).toBe(10);expect(pending.pendingSpin).toBeTruthy();const expected=10-5+pending.pendingSpin.payout;

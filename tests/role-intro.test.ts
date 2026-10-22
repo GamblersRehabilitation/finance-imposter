@@ -1,0 +1,14 @@
+import {expect,it} from 'vitest';
+import {createElement} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {GambleGame} from '../src/GambleWheel';
+import {TheftGame} from '../src/GameWidgets';
+import {ManagerMeetingPanel,ManagerRoster} from '../src/RolePanels';
+import {roleChapters} from '../src/roleLessonCatalog';
+import {RoleHelp} from '../src/RoleHelp';
+import {makeTheftState} from '../server/theftPuzzles';
+it('een nieuwe Gokker ziet het echte rad zonder een automatisch tutorialvenster',()=>{const html=renderToStaticMarkup(createElement(GambleGame,{s:{phase:'playing',meeting:{phase:'idle'},me:{visualPractice:{}},gambler:{balance:5000,maxStake:1000,spinsRemaining:2}},disabled:false,action:async()=>{throw Error('Geen lesactie zonder klik');}}));expect(html).toContain('Stille uitleg van het gokrad');expect(html).toContain('Rad draaien');expect(html).not.toContain('wheel-lesson-dialog');});
+it.each(['lockpick','diversion'] as const)('een onbekend steelspel %s blijft direct speelbaar zonder verplichte uitleg',module=>{const html=renderToStaticMarkup(createElement(TheftGame,{s:{me:{visualPractice:{}},terminalAttempt:{id:'attempt',kind:'theft',theft:makeTheftState(module,100000)}},now:100000,disabled:false,action:async()=>({ok:true})}));expect(html).toContain('Steelspeltutorial openen');expect(html).not.toContain('Eerste steelspeltutorial');expect(html).not.toContain('expanded-tutorial');expect(html).toContain(module==='lockpick'?'Stop de wijzer en ontgrendel':'Route testen en activeren');});
+it.each(['employee','security','manager','gambler'])('rolintro %s bevat alleen rolvaardigheden en geen koppelen of algemene taakles',role=>{expect(roleChapters[role]).not.toContain('pair');expect(roleChapters[role]).not.toContain('task');const html=renderToStaticMarkup(createElement(RoleHelp,{role}));expect(html).toContain('muted');expect(html).not.toContain('Oefen de scansymbolen');expect(html).not.toContain('Rolhoofdstuk 1: pair');});
+const state={phase:'playing',me:{id:'bo'},meeting:{phase:'dismissal',deadline:130000,dismissedId:null},durations:{gather:30000,discuss:90000},players:[{id:'bo',name:'Bo',publicRole:'manager'},{id:'noor',name:'Noor'}]};
+it('de gedeelde vergaderweergave houdt selecteren en bevestigen apart en biedt niemand ontslaan',()=>{const html=renderToStaticMarkup(createElement(ManagerMeetingPanel,{s:state,now:100000,onAction:()=>{}}));expect(html).toContain('Niemand ontslaan en werk hervatten');const roster=renderToStaticMarkup(createElement(ManagerRoster,{s:state,selected:'noor',onSelect:()=>{},onDismiss:()=>{}}));expect(roster).toContain('Ontslag van geselecteerde speler bevestigen');expect(roster).toContain('Ontslag annuleren');expect(roster).toContain('Noor');});
