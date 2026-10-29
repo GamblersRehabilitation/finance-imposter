@@ -217,3 +217,6 @@ Gericht getest: aankoopwinst met nul resterende buit; veel saldo zonder winst; g
 Definitieve mediacontrole: H264 390×780, 68 seconden, geen audiostream; volledige decode geslaagd. Op 390×844 telefoonformaat: dialoog past, afspelen/pauseren/zoeken naar 2 seconden werken, geen videofout. Vercel-productie dpl_4mX2tywwJvurZk6KkBy8afRNd7vG: client index-Fc0d3CmP.js; video en poster met lokale SHA256 vergeleken; HTTP206 voor doorspoelen.
 
 29 oktober 2026: de aangeleverde Gokker-intro is teruggezet bij de roluitleg. De nieuwe stille doel-/steelfilm opent uitsluitend via het vraagteken rechtsboven bij de drie aankopen. Achttien gerichte aankoop-/rolfilmtests en de productiebuild geslaagd.
+
+### Persoonlijke kasbeurten — 29 oktober 2026
+33 gerichte tests geslaagd: maximaal twee inningen, één per kas per gokker, partner onafhankelijk, kas direct gebruikt vóór vertraagde afschrijving, idempotente dubbele inning, refresh/herstart, mislukken/annuleren/geweigerde inning, vernieuwen na meeting en geen extra beurt door verplaatsen van kassen. Buitmaximum per steelspel blijft 6× basis, beide kassen onafhankelijk. TypeScript en productiebuild geslaagd. Alleen geïsoleerde lokale voorbeeldgame gebruikt.

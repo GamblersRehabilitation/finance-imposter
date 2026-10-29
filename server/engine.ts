@@ -1,3 +1,4 @@
+import {cashAccess} from './cashAccess.js';
 import {TASK_DURATION_MS,MAX_OPEN_TASKS} from '../src/taskRules.js';
 import {drawAssignments} from './assignmentRules.js';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
@@ -66,7 +67,7 @@ export class Engine {
       this.player(g,a,'gambler');need(g.theftUnlocked,'LOCKED','Diefstal is nog niet ontgrendeld.',409);
       need(g.config.moneyLaptops.includes(laptopId),'LOCATION','Deze laptop is niet verbonden met de kas.',403);
       need(g.config.theftAmount!==null,'THEFT_AMOUNT','De beheerder moet de buit instellen.',409);
-      need(this.theftRemaining(g,p.id)>=g.config.theftAmount!,'THEFT_LIMIT','Maximale buit deze ronde bereikt. Wacht op de meeting.',409);
+      need(cashAccess(g,p.id).laptops.includes(laptopId),'CASH_USED','Deze kas is deze ronde al door jou gebruikt. Kies de andere kas of wacht op de meeting.',409);
     }
     g.terminalAttempts=g.terminalAttempts.filter(t=>t.expiresAt>this.now()&&t.round===g.round);
     const existing=g.terminalAttempts.find(t=>t.laptopId===laptopId);
@@ -149,7 +150,7 @@ export class Engine {
     if(data.operation==='refresh'){need(state!.version!==2,'STARTED','Dit steelspel is al vernieuwd.',409);refreshTheftChallenge(state!,this.now());return {ok:true};}
     if(data.operation==='cashout'){
       need(state!.loot>0,'LOOT','Voltooi eerst een ronde.',409);
-      const reserved=g.thefts.filter(x=>!x.debited).reduce((n,x)=>n+x.amount,0),amount=Math.min(state!.loot,this.theftRemaining(g,p.id),g.companyCash-reserved);
+      const reserved=g.thefts.filter(x=>!x.debited).reduce((n,x)=>n+x.amount,0),amount=Math.min(state!.loot,this.theftRemaining(g,p.id,t!.laptopId),g.companyCash-reserved);
       need(amount>=(g.config.theftAmount??1),'FUNDS','Onvoldoende ruimte voor de minimale buit. Wacht op kasinkomsten of een nieuwe ronde.',409);this.steal(g,p.id,t!.laptopId,amount);g.terminalAttempts=g.terminalAttempts.filter(x=>x.id!==t!.id);return {ok:true,amount};
     }
     need(state!.round<=4,'ROUNDS','Alle rondes zijn voltooid. Verzamel de buit.',409);
@@ -167,12 +168,12 @@ export class Engine {
     }
     if(!correct){this.expireTask(g,t!,'answer');return {ok:true,failed:true};}
     state!.step++;const required=state!.module==='lockpick'?4:1;
-    if(state!.step===required){state!.loot=Math.min(state!.loot+(g.config.theftAmount??5)*Math.ceil(state!.round/2),this.theftRemaining(g,p.id));state!.round++;state!.step=0;}
-    if(state!.loot>=this.theftRemaining(g,p.id))state!.round=5;
+    if(state!.step===required){state!.loot=Math.min(state!.loot+(g.config.theftAmount??5)*Math.ceil(state!.round/2),this.theftRemaining(g,p.id,t!.laptopId));state!.round++;state!.step=0;}
+    if(state!.loot>=this.theftRemaining(g,p.id,t!.laptopId))state!.round=5;
     if(state!.round<=4)refreshTheftChallenge(state!,this.now());else{state!.nonce=randomUUID();delete state!.pipeDeadline;delete state!.pipeStartedAt;}
     t!.expiresAt=this.now()+300000;return {ok:true};
   }
-  theftRemaining(g:Game,playerId:string){return Math.max(0,theftLimits(g.config.theftAmount??1).max-g.thefts.filter(t=>t.playerId===playerId&&t.round===g.round).reduce((sum,t)=>sum+t.amount,0));}
+  theftRemaining(g:Game,playerId:string,laptopId?:number){const access=cashAccess(g,playerId),maximum=theftLimits(g.config.theftAmount??1).max;return laptopId===undefined?access.remaining*maximum:access.laptops.includes(laptopId)?maximum:0;}
   autoAssign(g:Game){this.lobby(g);g.assignments=Object.fromEntries(g.players.map(p=>[p.id,[]]));this.addTasks(g);}
   touch(code:string,a:Actor){if(a.kind==='admin')return;const g=this.get(code);const key=a.kind==='player'?`player-${a.playerId}`:`${a.kind}-${a.laptopId??''}`;if(g.presence[key]&&this.now()-g.presence[key].lastSeen<25000)return;g.presence[key]={...a,lastSeen:this.now()};g.revision++;this.store.save(g);this.changed(g);}
   player(g:Game,a:Actor,role?:Role){need(a.kind==='player','FORBIDDEN','Deze actie vereist een speler.',403);const p=g.players.find(p=>p.id===(a as {playerId:string}).playerId);need(p,'FORBIDDEN','Onbekende speler.',403);need(!p!.dismissed,'SPECTATOR','Spectators kunnen deze actie niet uitvoeren.',403);if(role)need(p!.role===role,'FORBIDDEN','Je rol mag deze actie niet uitvoeren.',403);return p!;}
@@ -199,6 +200,7 @@ export class Engine {
     g.companyCash+=t!.reward;if(g.companyCash>=theftThreshold(g.config.companyGoal))g.theftUnlocked=true;this.ledger(g,'task',t!.reward,`${p.name} · laptop ${laptopId}`);this.evaluate(g);
   }
   steal(g:Game,playerId:string,laptopId:number,amount:number){this.active(g);need(g.meeting.phase==='idle','MEETING','Diefstal is tijdens een meeting gepauzeerd.',409);this.player(g,{kind:'player',playerId},'gambler');amount=positive.parse(amount);need(g.theftUnlocked,'LOCKED','Diefstal is nog niet ontgrendeld.',409);need(g.config.moneyLaptops.includes(laptopId),'LOCATION','Deze laptop is niet verbonden met de kas.',403);
+    need(cashAccess(g,playerId).laptops.includes(laptopId),'CASH_USED','Deze kas is deze ronde al door jou gebruikt. Kies de andere kas of wacht op de meeting.',409);
     const reserved=g.thefts.filter(t=>!t.debited).reduce((a,t)=>a+t.amount,0);need(amount<=g.companyCash-reserved,'FUNDS','Onvoldoende ongereserveerd bedrijfsgeld.',409);
     const at=this.now();g.thefts.push({round:g.round,id:randomUUID(),playerId,laptopId,amount,collectedAt:at,debitAt:at+30000,alertAt:at+30000,debited:false,alerted:false});g.gamblerCash+=amount;this.ledger(g,'theft-collected',amount,`Laptop ${laptopId}`);this.evaluate(g);
   }
