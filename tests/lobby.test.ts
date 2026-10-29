@@ -14,9 +14,9 @@ it('onthult een snelle serveruitkomst en overwinning pas na het lokale animatie-
  expect(presentWheelResult(final,null)).toBe(final);expect(presentWheelResult(final,{id:'andere-draai',balance:25})).toBe(final);
  const stopped={...final,endReason:'manual',winner:'draw'};expect(presentWheelResult(stopped,{id:'draai',balance:25}).phase).toBe('ended');
 });
-it('maakt het rad moeilijker: acht winstvakken en acht verliesvakken op elke inzet',()=>{
- expect(WHEEL).toHaveLength(16);expect(WHEEL.filter(s=>s.factor<1)).toHaveLength(8);
- for(const stake of [1,3,5,7,1000,5000,12500]){expect(WHEEL.filter((_,i)=>wheelPayout(i,stake)>stake)).toHaveLength(8);expect(WHEEL.filter((_,i)=>wheelPayout(i,stake)<stake)).toHaveLength(8);}
+it('maakt het rad moeilijker: acht winstvakken en acht verliesvakken met behoud van een deel van elke inzet',()=>{
+ expect(WHEEL).toHaveLength(16);expect(WHEEL.every((_,i)=>wheelPayout(i,1)>0)).toBe(true);expect(WHEEL.filter(s=>s.factor<1)).toHaveLength(8);
+ for(const stake of [1,3,5,7,1000,5000,12500]){expect(WHEEL.filter((_,i)=>wheelPayout(i,stake)>stake)).toHaveLength(8);expect(WHEEL.filter((_,i)=>WHEEL[i].factor<1)).toHaveLength(8);}
 });
 function setup(){let now=100000;const db=new Store(':memory:');stores.push(db);const e=new Engine(db,()=>now),g=e.create();const cmd=(action:string,data:any={},actor:Actor={kind:'admin'},id=randomUUID())=>e.command(g.code,actor,id,action,data),current=()=>e.get(g.code);return {db,e,g,cmd,current,advance:(ms:number)=>{now+=ms;e.tick();}};}
 it.each([5,19])('laat %i spelers toe zonder vaste capaciteit en verdeelt pas bij start',count=>{const f=setup();for(let i=0;i<count;i++)f.e.claim(f.g.code,{name:`Speler ${i}`});expect(f.current().players.every(p=>p.role===null)).toBe(true);expect(()=>f.cmd('launch')).toThrow('toe');expect(f.current().players.every(p=>p.role===null)).toBe(true);f.cmd('role-counts',{roles:{manager:1,security:1,gambler:2}});f.cmd('admit-all');f.cmd('launch');const g=f.current();expect(g.phase).toBe('playing');expect(g.config.roles.employee).toBe(count-4);expect(g.players.every(p=>p.role&&g.assignments[p.id].length)).toBe(true);});

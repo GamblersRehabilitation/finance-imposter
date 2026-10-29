@@ -14,7 +14,7 @@ export interface Config {
 export interface Player { id: string; name: string; role: Role | null; dismissed: boolean; claimed: boolean; introSeen: boolean; checks: number; admitted: boolean; visualPractice?:{pairing?:boolean;budget?:boolean;games?:number[];theft?:string[];wheel?:boolean} }
 export interface LaptopTask { id: number; icon: string; label: string; reward: number; module: string }
 export interface Completion { cycle?:number; playerId: string; laptopId: number; reward: number; at: number }
-export interface Theft { id: string; playerId: string; laptopId: number; amount: number; collectedAt: number; debitAt: number; alertAt: number; debited: boolean; alerted: boolean; redCleared?:boolean }
+export interface Theft { round?:number; id: string; playerId: string; laptopId: number; amount: number; collectedAt: number; debitAt: number; alertAt: number; debited: boolean; alerted: boolean; redCleared?:boolean }
 export interface Investigation { id: string; playerId: string; laptopId: number; at: number; round: number; transactionTimes: number[]; failures?: number[] }
 export interface Ledger { id: string; kind: string; amount: number; company: number; gamblers: number; at: number; detail: string }
 export interface Puzzle { title: string; expression: string; choices: number[]; answer: number; kind?: string; transfers?:{reference:number;amount:number}[];invoices?:{label:string;days:number;amount:number}[];instruction?: string; facts?: number[]; details?:Record<string,number|number[]>;review?:{expectedLabel:string;actualLabel:string;documents:{label:string;expected:number;actual:number}[]};matching?:{items:{label:string;amount:number}[];accounts:{label:string;amount:number}[];solution:number[]} }
@@ -23,6 +23,7 @@ export interface TerminalAttempt { id: string; playerId: string; laptopId: numbe
 export interface GameSummary { endedAt:number;gamblerWealth?:number; companyCash:number; gamblerCash:number; players:{id:string;name:string;role:Role|null;dismissed:boolean;completed:number;assigned:number;won:boolean}[] }
 export interface Presence {kind:Actor['kind'];playerId?:string;laptopId?:number;lastSeen:number}
 export interface Game {
+  economyVersion?:number;
   rulesVersion?: number;
   id: string; code: string; title: string; revision: number; createdAt: number; phase: Phase; pausedAt: number | null;
   config: Config; players: Player[]; tasks: LaptopTask[]; assignments: Record<string, number[]>; completions: Completion[];

@@ -1,4 +1,5 @@
-import {TASK_DURATION_MS} from '../src/taskRules.js';
+import {TASK_DURATION_MS,MAX_OPEN_TASKS} from '../src/taskRules.js';
+import {drawAssignments} from './assignmentRules.js';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { GameError, type Game, type Role, type Actor, type Config } from './types.js';
@@ -8,7 +9,7 @@ import { wheelPayout, WHEEL } from '../src/wheelRules.js';
 import {makeTheftState,refreshTheftChallenge} from './theftPuzzles.js';
 import {angleDistance,lockAngle,tracePipes} from '../src/theftRules.js';
 import {makeTaskStage,makeTaskSequence,drawTaskSequence,taskProgressKey,TASK_PARTS} from './taskStages.js';
-import {economyFor,TASK_REWARD,taskFailureCost,theftThreshold,maxWheelStake,SPINS_PER_ROUND,shopCatalog} from '../src/economyRules.js';
+import {economyFor,TASK_REWARD,taskFailureCost,theftThreshold,theftLimits,maxWheelStake,SPINS_PER_ROUND,shopCatalog,purchaseGoal} from '../src/economyRules.js';
 import {defaultFloorPlan} from '../src/floorPlanRules.js';
 import {floorPlanSchema} from './floorPlan.js';
 import { financialTasks } from './puzzles.js';
@@ -28,6 +29,7 @@ const need=(ok:unknown,code:string,message:string,status=400):void=>{if(!ok)thro
 export function defaultConfig():Config {return {playerCount:14,roles:{manager:1,security:1,gambler:2,employee:10},...economyFor(14),autoEconomy:true,autoMeetingMs:240000,gatherMs:30000,discussMs:90000,cooldownMs:60000,workerWin:'dismiss',zeroCash:'draw',dismissedGambler:'shares',moneyLaptops:[2,5],testMode:false,introVideoUrl:null};}
 const tasks = financialTasks;
 export class Engine {
+  assignmentRoll=(max:number)=>randomInt(max);
   roll=()=>randomInt(WHEEL.length);
   taskSequence=(first:number,deck?:import('../src/financeModes.js').FinanceDeck)=>deck?drawTaskSequence(deck):makeTaskSequence(first);
   jobRoll=()=>randomInt(100);
@@ -38,13 +40,13 @@ export class Engine {
     title=nameSchema.parse(title);
     for(const old of this.store.all())if(old.phase==='ended')this.store.deleteSession(old.id);
     let code:string;do{code=randomInt(100000,1000000).toString();}while(this.store.get(code));
-    const g:Game={financeVersion:1,rulesVersion:4,id:randomUUID(),code,title:nameSchema.parse(title),revision:0,createdAt:this.now(),phase:'lobby',pausedAt:null,config:defaultConfig(),players:[],tasks:tasks.slice(0,8).map(([icon,label],i)=>({id:i+1,icon,label,reward:TASK_REWARD,module:`finance-${i+1}`})),assignments:{},completions:[],floorPlan:this.store.floorPlan(),taskCycles:{},taskSequences:{},taskDecks:{},laptopCodes:this.store.laptopCodes(),terminalAttempts:[],taskProgress:{},companyCash:defaultConfig().startCapital,gamblerCash:0,spinsThisRound:{},purchases:[],theftUnlocked:false,thefts:[],investigations:[],ledger:[],meeting:{phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null},round:0,nextMeetingAt:null,cooldownUntil:null,lastDismissal:null,winner:null,endReason:null,pendingSpin:null,jobs:[],taskFailures:[],summary:null,presence:{},lastGambles:{}};
+    const g:Game={economyVersion:1,financeVersion:1,rulesVersion:4,id:randomUUID(),code,title:nameSchema.parse(title),revision:0,createdAt:this.now(),phase:'lobby',pausedAt:null,config:defaultConfig(),players:[],tasks:tasks.slice(0,8).map(([icon,label],i)=>({id:i+1,icon,label,reward:TASK_REWARD,module:`finance-${i+1}`})),assignments:{},completions:[],floorPlan:this.store.floorPlan(),taskCycles:{},taskSequences:{},taskDecks:{},laptopCodes:this.store.laptopCodes(),terminalAttempts:[],taskProgress:{},companyCash:defaultConfig().startCapital,gamblerCash:0,spinsThisRound:{},purchases:[],theftUnlocked:false,thefts:[],investigations:[],ledger:[],meeting:{phase:'idle',source:null,startedAt:null,deadline:null,dismissedId:null},round:0,nextMeetingAt:null,cooldownUntil:null,lastDismissal:null,winner:null,endReason:null,pendingSpin:null,jobs:[],taskFailures:[],summary:null,presence:{},lastGambles:{}};
     this.store.save(g);return g;
   }
   ledger(g:Game,kind:string,amount:number,detail:string){g.ledger.push({id:randomUUID(),kind,amount,company:g.companyCash,gamblers:g.gamblerCash,at:this.now(),detail});}
   total(g:Game){return g.config.startCapital+g.players.length*g.tasks.reduce((n,t)=>n+t.reward,0);}
   wealth(g:Game){return g.gamblerCash+g.purchases.reduce((n,p)=>n+p.price,0);}
-  addTasks(g:Game){for(const [index,p] of g.players.entries()){if(p.dismissed)continue;const assigned=g.assignments[p.id]??=[];for(let j=0,added=0;j<8&&added<2;j++){const id=(index*2+Math.max(0,g.round-1)*2+j)%8+1;if(!assigned.includes(id)){assigned.push(id);added++;}}}}
+  addTasks(g:Game){for(const p of g.players){if(p.dismissed)continue;const unfinished=Array.from({length:8},(_,i)=>i+1).filter(id=>(g.taskProgress[taskProgressKey(p.id,id)]??0)>0);g.assignments[p.id]=drawAssignments(g.assignments[p.id]??[],this.assignmentRoll,unfinished);}}
   gameId(g:Game,laptopId:number){return g.floorPlan.laptops.find(l=>l.id===laptopId)?.gameId??laptopId;}
   rotateCash(g:Game){const count=g.config.moneyLaptops.length,available=Array.from({length:8},(_,i)=>i+1).filter(id=>!g.config.moneyLaptops.includes(id));for(let i=available.length-1;i>0;i--){const j=randomInt(i+1);[available[i],available[j]]=[available[j],available[i]];}g.config.moneyLaptops=available.slice(0,count);}
 
@@ -64,6 +66,7 @@ export class Engine {
       this.player(g,a,'gambler');need(g.theftUnlocked,'LOCKED','Diefstal is nog niet ontgrendeld.',409);
       need(g.config.moneyLaptops.includes(laptopId),'LOCATION','Deze laptop is niet verbonden met de kas.',403);
       need(g.config.theftAmount!==null,'THEFT_AMOUNT','De beheerder moet de buit instellen.',409);
+      need(this.theftRemaining(g,p.id)>=g.config.theftAmount!,'THEFT_LIMIT','Maximale buit deze ronde bereikt. Wacht op de meeting.',409);
     }
     g.terminalAttempts=g.terminalAttempts.filter(t=>t.expiresAt>this.now()&&t.round===g.round);
     const existing=g.terminalAttempts.find(t=>t.laptopId===laptopId);
@@ -80,8 +83,8 @@ export class Engine {
   }
   prepareTaskTutorial(g:Game,t:Game['terminalAttempts'][number]){
     if(t.kind!=='task'||!t.visualMode)return;
-    const p=g.players.find(p=>p.id===t.playerId)!,gameId=t.sequence?.[t.taskStage??0]??this.gameId(g,t.laptopId);
-    if(!p.visualPractice?.games?.includes(gameId)){t.practicePending=true;t.expiresAt=this.now()+300000;delete t.taskExpiresAt;}
+    // Every new financial part starts with its own lesson, including previously learned games.
+    t.practicePending=true;t.expiresAt=this.now()+300000;delete t.taskExpiresAt;
   }
   expireTask(g:Game,t:Game['terminalAttempts'][number],reason:'answer'|'timeout'='timeout'){
     if(t.practicePending){g.terminalAttempts=g.terminalAttempts.filter(x=>x.id!==t.id);return;}
@@ -105,7 +108,7 @@ export class Engine {
       t!.tutorialPausedAt=this.now();t!.tutorialExpiresAt=t!.expiresAt;t!.expiresAt=this.now()+86400000;
     }else{
       const p=g.players.find(p=>p.id===t!.playerId)!;p.visualPractice??={};
-      if(t!.kind==='task'){const gameId=t!.sequence?.[t!.taskStage??0]??this.gameId(g,t!.laptopId);if(gameId!==({invoice:2,exchange:3,saving:4,portfolio:8,payroll:9,vat:10} as Record<string,number>)[t!.puzzle.kind??''])p.visualPractice.games=[...new Set([...(p.visualPractice.games??[]),gameId])];if(gameId===1)p.visualPractice.budget=true;}
+      if(t!.kind==='task'){const gameId=t!.sequence?.[t!.taskStage??0]??this.gameId(g,t!.laptopId);p.visualPractice.games=[...new Set([...(p.visualPractice.games??[]),gameId])];if(gameId===1)p.visualPractice.budget=true;}
       else if(t!.theft)p.visualPractice.theft=[...new Set([...(p.visualPractice.theft??[]),t!.theft.module])];
       if(t!.practicePending){t!.practicePending=false;t!.taskExpiresAt=this.now()+TASK_DURATION_MS;t!.expiresAt=t!.taskExpiresAt;}
       else if(t!.tutorialPausedAt!==undefined){const elapsed=this.now()-t!.tutorialPausedAt;t!.expiresAt=t!.tutorialExpiresAt!+elapsed;if(t!.taskExpiresAt!==undefined)t!.taskExpiresAt+=elapsed;if(t!.theft?.lock)t!.theft.lock.startedAt+=elapsed;if(t!.theft?.pipeStartedAt!==undefined)t!.theft.pipeStartedAt+=elapsed;if(t!.theft?.pipeDeadline!==undefined)t!.theft.pipeDeadline+=elapsed;delete t!.tutorialPausedAt;delete t!.tutorialExpiresAt;}
@@ -146,8 +149,8 @@ export class Engine {
     if(data.operation==='refresh'){need(state!.version!==2,'STARTED','Dit steelspel is al vernieuwd.',409);refreshTheftChallenge(state!,this.now());return {ok:true};}
     if(data.operation==='cashout'){
       need(state!.loot>0,'LOOT','Voltooi eerst een ronde.',409);
-      const reserved=g.thefts.filter(x=>!x.debited).reduce((n,x)=>n+x.amount,0),amount=Math.min(state!.loot,g.companyCash-reserved);
-      need(amount>0,'FUNDS','De kas is leeg.',409);this.steal(g,p.id,t!.laptopId,amount);g.terminalAttempts=g.terminalAttempts.filter(x=>x.id!==t!.id);return {ok:true,amount};
+      const reserved=g.thefts.filter(x=>!x.debited).reduce((n,x)=>n+x.amount,0),amount=Math.min(state!.loot,this.theftRemaining(g,p.id),g.companyCash-reserved);
+      need(amount>=(g.config.theftAmount??1),'FUNDS','Onvoldoende ruimte voor de minimale buit. Wacht op kasinkomsten of een nieuwe ronde.',409);this.steal(g,p.id,t!.laptopId,amount);g.terminalAttempts=g.terminalAttempts.filter(x=>x.id!==t!.id);return {ok:true,amount};
     }
     need(state!.round<=4,'ROUNDS','Alle rondes zijn voltooid. Verzamel de buit.',409);
     need(data.nonce===state!.nonce,'STEP','Deze stap is al verwerkt.',409);
@@ -164,10 +167,12 @@ export class Engine {
     }
     if(!correct){this.expireTask(g,t!,'answer');return {ok:true,failed:true};}
     state!.step++;const required=state!.module==='lockpick'?4:1;
-    if(state!.step===required){state!.loot+=(g.config.theftAmount??5)*state!.round;state!.round++;state!.step=0;}
+    if(state!.step===required){state!.loot=Math.min(state!.loot+(g.config.theftAmount??5)*Math.ceil(state!.round/2),this.theftRemaining(g,p.id));state!.round++;state!.step=0;}
+    if(state!.loot>=this.theftRemaining(g,p.id))state!.round=5;
     if(state!.round<=4)refreshTheftChallenge(state!,this.now());else{state!.nonce=randomUUID();delete state!.pipeDeadline;delete state!.pipeStartedAt;}
     t!.expiresAt=this.now()+300000;return {ok:true};
   }
+  theftRemaining(g:Game,playerId:string){return Math.max(0,theftLimits(g.config.theftAmount??1).max-g.thefts.filter(t=>t.playerId===playerId&&t.round===g.round).reduce((sum,t)=>sum+t.amount,0));}
   autoAssign(g:Game){this.lobby(g);g.assignments=Object.fromEntries(g.players.map(p=>[p.id,[]]));this.addTasks(g);}
   touch(code:string,a:Actor){if(a.kind==='admin')return;const g=this.get(code);const key=a.kind==='player'?`player-${a.playerId}`:`${a.kind}-${a.laptopId??''}`;if(g.presence[key]&&this.now()-g.presence[key].lastSeen<25000)return;g.presence[key]={...a,lastSeen:this.now()};g.revision++;this.store.save(g);this.changed(g);}
   player(g:Game,a:Actor,role?:Role){need(a.kind==='player','FORBIDDEN','Deze actie vereist een speler.',403);const p=g.players.find(p=>p.id===(a as {playerId:string}).playerId);need(p,'FORBIDDEN','Onbekende speler.',403);need(!p!.dismissed,'SPECTATOR','Spectators kunnen deze actie niet uitvoeren.',403);if(role)need(p!.role===role,'FORBIDDEN','Je rol mag deze actie niet uitvoeren.',403);return p!;}
@@ -195,7 +200,7 @@ export class Engine {
   }
   steal(g:Game,playerId:string,laptopId:number,amount:number){this.active(g);need(g.meeting.phase==='idle','MEETING','Diefstal is tijdens een meeting gepauzeerd.',409);this.player(g,{kind:'player',playerId},'gambler');amount=positive.parse(amount);need(g.theftUnlocked,'LOCKED','Diefstal is nog niet ontgrendeld.',409);need(g.config.moneyLaptops.includes(laptopId),'LOCATION','Deze laptop is niet verbonden met de kas.',403);
     const reserved=g.thefts.filter(t=>!t.debited).reduce((a,t)=>a+t.amount,0);need(amount<=g.companyCash-reserved,'FUNDS','Onvoldoende ongereserveerd bedrijfsgeld.',409);
-    const at=this.now();g.thefts.push({id:randomUUID(),playerId,laptopId,amount,collectedAt:at,debitAt:at+30000,alertAt:at+30000,debited:false,alerted:false});g.gamblerCash+=amount;this.ledger(g,'theft-collected',amount,`Laptop ${laptopId}`);this.evaluate(g);
+    const at=this.now();g.thefts.push({round:g.round,id:randomUUID(),playerId,laptopId,amount,collectedAt:at,debitAt:at+30000,alertAt:at+30000,debited:false,alerted:false});g.gamblerCash+=amount;this.ledger(g,'theft-collected',amount,`Laptop ${laptopId}`);this.evaluate(g);
   }
   gamble(g:Game,playerId:string,stake:number,payout:number){this.active(g);need(g.meeting.phase==='idle','MEETING','Gokken is tijdens een meeting gepauzeerd.',409);this.player(g,{kind:'player',playerId},'gambler');stake=positive.parse(stake);payout=int.parse(payout);need(stake<=g.gamblerCash,'FUNDS','Onvoldoende geld op de gedeelde rekening.',409);g.gamblerCash+=payout-stake;this.ledger(g,'gamble',payout-stake,`Inzet €${stake.toLocaleString('nl-NL')}, uitbetaling €${payout.toLocaleString('nl-NL')}`);this.evaluate(g);}
   meeting(g:Game,source:'automatic'|'emergency'|'admin'){this.active(g);need(g.meeting.phase==='idle','MEETING_ACTIVE','Er is al een meeting.',409);if(source==='emergency')need(!g.cooldownUntil || this.now()>=g.cooldownUntil,'COOLDOWN','De emergency-knop koelt nog af.',409);
@@ -206,7 +211,7 @@ export class Engine {
     const p=g.players.find(p=>p.id===playerId);need(p && !p.dismissed && p.role,'PLAYER','Deze speler kan niet worden ontslagen.',409);p!.dismissed=true;if(g.pendingSpin?.playerId===playerId)g.pendingSpin=null;g.terminalAttempts=g.terminalAttempts.filter(t=>t.playerId!==playerId);if(!simulation)g.meeting.dismissedId=p!.id;g.lastDismissal={playerId:p!.id,name:p!.name,role:p!.role!,at:this.now()};this.ledger(g,'dismiss',0,p!.name);this.evaluate(g);
   }
   evaluate(g:Game){if(g.phase!=='playing')return;
-    if(g.config.gamblerGoal!==null && this.wealth(g)>=g.config.gamblerGoal){this.finish(g,'gamblers','financial-goal');return;}
+    if(purchaseGoal(g.config.gamblerGoal??0,g.purchases).complete){this.finish(g,'gamblers','all-items-purchased');return;}
     const reserved=g.thefts.filter(t=>!t.debited).reduce((n,t)=>n+t.amount,0);
     if(g.companyCash-reserved>=g.config.companyGoal){this.finish(g,'employees','company-goal');return;}
     if(g.companyCash<=0){this.finish(g,'gamblers','company-bankrupt');return;}
@@ -234,7 +239,7 @@ export class Engine {
         case 'auto-assign':this.admin(a);this.autoAssign(g);break;
         case 'admit-all':this.admin(a);this.lobby(g);g.players.forEach(p=>p.admitted=true);break;
         case 'admit':{this.admin(a);this.lobby(g);const p=g.players.find(p=>p.id===data.playerId);need(p,'PLAYER','Onbekende speler.');p!.admitted=true;break;}
-        case 'assign':{this.admin(a);this.lobby(g);need(g.players.some(p=>p.id===data.playerId),'PLAYER','Speler bestaat niet.');g.assignments[data.playerId]=z.array(z.number().int().min(1).max(8)).max(8).refine(a=>new Set(a).size===a.length).parse(data.ids);break;}
+        case 'assign':{this.admin(a);this.lobby(g);need(g.players.some(p=>p.id===data.playerId),'PLAYER','Speler bestaat niet.');g.assignments[data.playerId]=z.array(z.number().int().min(1).max(8)).max(MAX_OPEN_TASKS).refine(a=>new Set(a).size===a.length).parse(data.ids).sort((a,b)=>a-b);break;}
         case 'rewards':{this.admin(a);this.lobby(g);const rewards=z.array(int).length(8).parse(data.rewards);g.tasks.forEach((t,i)=>t.reward=rewards[i]);break;}
         case 'demo':{this.admin(a);this.lobby(g);need([13,14].includes(g.config.playerCount),'DEMO_COUNT','Demodata is voor 13 of 14 spelers.',409);need(g.players.length===0,'DEMO','Demodata kan alleen in een lege lobby.',409);g.config.testMode=true;g.config.moneyLaptops=[2,6];['Noor','Sam','Yara','Milan','Lina','Daan','Amir','Tess','Bo','Evi','Finn','Sara','Jules','Maya'].slice(0,g.config.playerCount).forEach(n=>this.addPlayer(g,n));this.distribute(g);g.players.forEach(p=>p.admitted=true);break;}
         case 'launch':this.admin(a);this.lobby(g);need(g.players.every(p=>p.admitted),'WAITING','Laat eerst iedereen toe.',409);this.distribute(g);this.start(g);break;
@@ -265,13 +270,23 @@ export class Engine {
         case 'task-proof':{const p=this.player(g,a);const laptopId=z.number().int().min(1).max(8).parse(data.laptopId);const task=g.tasks.find(t=>t.id===laptopId)!;const adapter=taskAdapters.get(task.module);need(adapter,'PLACEHOLDER','De financiële minigame is nog niet gekoppeld.',409);need(adapter!.verify(data.proof,{sessionId:g.id,playerId:p.id,laptopId}),'PROOF','Ongeldig spelbewijs.',403);this.complete(g,p.id,laptopId);break;}
         case 'terminal-begin':response=this.beginTerminal(g,a,data);break;
         case 'terminal-tutorial':response=this.terminalTutorial(g,a,data);break;
+        case 'skip-tutorials':{
+          this.terminalReady(g);
+          const t=a.kind==='laptop'?g.terminalAttempts.find(t=>t.id===data.attemptId&&t.laptopId===a.laptopId):a.kind==='player'?g.terminalAttempts.find(t=>t.playerId===a.playerId):undefined;
+          need(a.kind==='player'||(a.kind==='laptop'&&t),'FORBIDDEN','Geen gekoppelde speler.',403);
+          const p=this.player(g,a.kind==='player'?a:{kind:'player',playerId:t!.playerId});
+          // Legacy action name: skip all steps of the current lesson, never future lessons.
+          p.visualPractice??={};if(!t)p.visualPractice.pairing=true;
+          if(t&&(t.practicePending||t.tutorialPausedAt!==undefined))this.terminalTutorial(g,t.kind==='task'?{kind:'laptop',laptopId:t.laptopId}:{kind:'player',playerId:p.id},{attemptId:t.id,operation:'close'});
+          break;
+        }
         case 'wheel-tutorial':{this.terminalReady(g);const p=this.player(g,a,'gambler');p.visualPractice={...p.visualPractice,wheel:true};break;}
         case 'pairing-practice':{this.terminalReady(g);const p=this.player(g,a);need(p.admitted,'WAITING','Wacht op toelating.',403);need(data.code==='0241','PRACTICE','Probeer de voorbeeldvormen opnieuw.');p.visualPractice={...p.visualPractice,pairing:true};break;}
         case 'terminal-practice':{this.terminalReady(g);need(a.kind==='laptop','FORBIDDEN','Oefen op de gekoppelde laptop.',403);const t=g.terminalAttempts.find(t=>t.id===data.attemptId&&t.laptopId===(a as {laptopId:number}).laptopId);need(t&&t.visualMode&&t.expiresAt>this.now(),'ATTEMPT','Deze poging is verlopen.',409);need(data.answer===45&&data.review===1&&JSON.stringify(data.matches)==='[2,0,1]','PRACTICE','Probeer de oefening opnieuw.');if(t!.practicePending){const p=g.players.find(p=>p.id===t!.playerId)!;p.visualPractice={...p.visualPractice,budget:true,games:[...new Set([...(p.visualPractice?.games??[]),...(t!.sequence??[1,13,14])])]};t!.practicePending=false;t!.taskExpiresAt=this.now()+TASK_DURATION_MS;t!.expiresAt=t!.taskExpiresAt;}break;}
         case 'terminal-confirm':response=this.confirmTerminal(g,a,data);break;
         case 'terminal-cancel':{const p=this.player(g,a);g.terminalAttempts=g.terminalAttempts.filter(t=>t.playerId!==p.id);break;}
         case 'steal':response=this.theftStep(g,a,data);break;
-        case 'buy-item':{this.terminalReady(g);const p=this.player(g,a,'gambler'),item=shopCatalog(g.config.gamblerGoal??0).find(i=>i.id===data.itemId);need(item,'ITEM','Onbekend artikel.',404);need(!g.purchases.some(p=>p.itemId===item!.id),'OWNED','Dit artikel is al van jullie.',409);need(g.gamblerCash-(g.pendingSpin?.stake??0)>=item!.price,'FUNDS','Onvoldoende buit voor dit artikel.',409);g.gamblerCash-=item!.price;g.purchases.push({id:randomUUID(),itemId:item!.id,playerId:p.id,price:item!.price,at:this.now()});this.ledger(g,'shop',-item!.price,item!.name);break;}
+        case 'buy-item':{this.terminalReady(g);const p=this.player(g,a,'gambler'),item=shopCatalog(g.config.gamblerGoal??0).find(i=>i.id===data.itemId);need(item,'ITEM','Onbekend artikel.',404);need(!g.purchases.some(p=>p.itemId===item!.id),'OWNED','Dit artikel is al van jullie.',409);need(g.gamblerCash-(g.pendingSpin?.stake??0)>=item!.price,'FUNDS','Onvoldoende buit voor dit artikel.',409);g.gamblerCash-=item!.price;g.purchases.push({id:randomUUID(),itemId:item!.id,playerId:p.id,price:item!.price,at:this.now()});this.ledger(g,'shop',-item!.price,item!.name);this.evaluate(g);break;}
         case 'gamble':{this.terminalReady(g);const p=this.player(g,a,'gambler'),stake=positive.parse(data.stake);need((g.spinsThisRound[p.id]??0)<SPINS_PER_ROUND,'SPIN_LIMIT','Je hebt deze ronde al twee keer gedraaid. Wacht op de volgende meeting.',409);need(!g.pendingSpin,'SPIN','Het gedeelde rad draait nog.',409);need(stake<=g.gamblerCash,'FUNDS','Onvoldoende geld op de gedeelde rekening.',409);need(stake<=maxWheelStake(g.config.gamblerGoal??0),'STAKE_LIMIT','Deze inzet is te hoog. Kies een kleiner bedrag.',409);g.spinsThisRound[p.id]=(g.spinsThisRound[p.id]??0)+1;const segment=this.roll();g.pendingSpin={id:randomUUID(),playerId:p.id,startedAt:this.now(),endsAt:this.now()+5000,stake,segment,payout:wheelPayout(segment,stake)};response={ok:true,serverTime:this.now(),spin:{id:g.pendingSpin.id,startedAt:g.pendingSpin.startedAt,endsAt:g.pendingSpin.endsAt,stake,segment}};break;}
         case 'test-task':this.test(g,a);this.complete(g,z.string().parse(data.playerId),z.number().int().min(1).max(8).parse(data.laptopId));break;
         case 'test-theft':this.test(g,a);this.steal(g,z.string().parse(data.playerId),z.number().int().min(1).max(8).parse(data.laptopId),positive.parse(data.amount));break;

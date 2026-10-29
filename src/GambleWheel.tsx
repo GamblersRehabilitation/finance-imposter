@@ -5,11 +5,12 @@ import {WHEEL} from './wheelRules';
 import {money} from './ui';
 import {cue} from './feedback';
 import {SkillTutorial} from './SkillTutorial';
+import {WheelHelpVideo} from './WheelHelpVideo';
 const sector=360/WHEEL.length;
 
 type Spin={id:string;startedAt:number;endsAt:number;stake:number;segment?:number;serverTime?:number};
 export const GambleGame=memo(function GambleGame({s,action,disabled,onMotionStart,onMotionEnd}:{s:any;action:(name:string,data?:unknown)=>Promise<any>;disabled:boolean;onMotionStart?:(id:string,balance:number,wealth?:number)=>void;onMotionEnd?:()=>void}){
- const [help,setHelp]=useState(false),[stake,setStake]=useState(1000),[busy,setBusy]=useState(false),[error,setError]=useState(''),[localSpin,setLocalSpin]=useState<Spin|null>(null),[animating,setAnimating]=useState(false);
+ const [help,setHelp]=useState<'video'|'practice'|null>(null),[stake,setStake]=useState(1000),[busy,setBusy]=useState(false),[error,setError]=useState(''),[localSpin,setLocalSpin]=useState<Spin|null>(null),[animating,setAnimating]=useState(false);
  const wheel=useRef<HTMLDivElement>(null),motion=useRef<Animation|null>(null),rotation=useRef(0),started=useRef<string|null>(null),seen=useRef(s.gambler.lastSpin?.id),lock=useRef(false),frozenBalance=useRef(s.gambler.balance);
  const pending=s.gambler.pendingSpin as Spin|null,last=s.gambler.lastSpin;
  const spin=pending??(localSpin?.id!==last?.id?localSpin:null);
@@ -29,7 +30,7 @@ export const GambleGame=memo(function GambleGame({s,action,disabled,onMotionStar
  useEffect(()=>()=>{motion.current?.cancel();onMotionEnd?.();},[]);
  useEffect(()=>{if(!animating&&last?.id&&seen.current!==last.id){seen.current=last.id;cue(last.win?'success':'error');}},[last?.id,animating]);
  async function start(){if(lock.current)return;lock.current=true;setBusy(true);setError('');cue();try{const r=await action('gamble',{stake});if(r.spin)setLocalSpin({...r.spin,serverTime:r.serverTime});}catch(e){setError((e as Error).message);cue('error');}finally{setBusy(false);lock.current=false;}}
- async function finishLesson(){if(lock.current)return;lock.current=true;setBusy(true);try{await action('wheel-tutorial');setHelp(false);cue('back');}catch(e){setError((e as Error).message);cue('error');}finally{lock.current=false;setBusy(false);}}
+ async function finishLesson(all=false){if(lock.current)return;lock.current=true;setBusy(true);try{await action('wheel-tutorial');setHelp(null);cue('back');}catch(e){setError((e as Error).message);cue('error');}finally{lock.current=false;setBusy(false);}}
  const spinning=!!spin||animating;
- return <section className="gamble-game"><header className="visual-section-header"><RotateCw size={32}/><button className="btn light icon-only" aria-label="Stille uitleg van het gokrad" disabled={spinning} onClick={()=>setHelp(true)}><CircleHelp/></button></header>{help?<SkillTutorial kind="wheel" disabled={disabled||busy} onClose={()=>{void finishLesson();}}/>:<WheelBoard gambler={s.gambler} stake={stake} onStake={setStake} onStart={start} disabled={disabled} spinning={spinning} busy={busy} balance={animating?frozenBalance.current:s.gambler.balance} rotation={rotation.current} wheelRef={wheel} last={last}/>}{error&&<div className="visual-error" role="alert" aria-label={error}><X/><Coins/></div>}</section>;
+ return <section className="gamble-game"><header className="visual-section-header"><RotateCw size={32}/><button className="btn light icon-only" aria-label="Stille uitleg van het gokrad" disabled={spinning} onClick={()=>setHelp('video')}><CircleHelp/></button></header>{help==='video'?<WheelHelpVideo disabled={disabled||busy} onClose={()=>{void finishLesson();}} onPractice={()=>setHelp('practice')}/>:help==='practice'?<SkillTutorial kind="wheel" disabled={disabled||busy} onClose={()=>{void finishLesson();}} onSkipAll={()=>{void finishLesson(true);}}/>:<WheelBoard gambler={s.gambler} stake={stake} onStake={setStake} onStart={start} disabled={disabled} spinning={spinning} busy={busy} balance={animating?frozenBalance.current:s.gambler.balance} rotation={rotation.current} wheelRef={wheel} last={last}/>}{error&&<div className="visual-error" role="alert" aria-label={error}><X/><Coins/></div>}</section>;
 });

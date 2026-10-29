@@ -1,7 +1,7 @@
 import {randomInt} from 'node:crypto';
 import {makePuzzle} from './puzzles.js';
 import type {Puzzle} from './types.js';
-import {FINANCE_MODE_COUNT,calculationModes,financeFamily,type FinanceDeck} from '../src/financeModes.js';
+import {ACTIVE_FINANCE_MODES,type FinanceDeck} from '../src/financeModes.js';
 import {makeInteractiveFinance} from '../src/interactiveFinanceRules.js';
 export const TASK_PARTS=3;
 export const taskProgressKey=(playerId:string,laptopId:number)=>`${playerId}:${laptopId}`;
@@ -20,18 +20,17 @@ const contexts=[
  {name:'Betaalvolgorde',records:['Vervallen factuur A','Vervallen factuur B','Vervallen factuur C'],expected:'Te voldoen',actual:'Betaald',items:['Spoedbetaling A','Spoedbetaling B','Spoedbetaling C'],accounts:['Factuur 104','Factuur 208','Factuur 315']},
 ];
 export function makeTaskSequence(first:number,choose:(max:number)=>number=randomInt):number[]{
- const pool=Array.from({length:FINANCE_MODE_COUNT},(_,i)=>i+1).filter(id=>id!==first);
+ const pool=ACTIVE_FINANCE_MODES.filter(id=>id!==first);
  for(let i=pool.length-1;i>0;i--){const j=choose(i+1);[pool[i],pool[j]]=[pool[j],pool[i]];}
  return [first,...pool.slice(0,2)];
 }
 /** Deal without replacement. Persist the bag, including reservations for unfinished tasks. */
 export function drawTaskSequence(deck:FinanceDeck,choose:(max:number)=>number=randomInt):number[]{
- const sequence:number[]=[];
+ const sequence:number[]=[];deck.remaining=deck.remaining.filter(id=>ACTIVE_FINANCE_MODES.includes(id));
  for(let slot=0;slot<3;slot++){
-  if(!deck.remaining.length){deck.remaining=Array.from({length:FINANCE_MODE_COUNT},(_,i)=>i+1);for(let i=deck.remaining.length-1;i>0;i--){const j=choose(i+1);[deck.remaining[i],deck.remaining[j]]=[deck.remaining[j],deck.remaining[i]];}}
+  if(!deck.remaining.length){deck.remaining=[...ACTIVE_FINANCE_MODES];for(let i=deck.remaining.length-1;i>0;i--){const j=choose(i+1);[deck.remaining[i],deck.remaining[j]]=[deck.remaining[j],deck.remaining[i]];}}
   const candidates=deck.remaining.filter(id=>!sequence.includes(id));
-  const families=new Set(sequence.map(financeFamily)),alreadyCalculating=sequence.some(id=>calculationModes.has(id));
-  const pick=candidates.find(id=>!families.has(financeFamily(id))&&(!alreadyCalculating||!calculationModes.has(id))&&id!==deck.last.at(-1))??candidates.find(id=>!calculationModes.has(id))??candidates[0];
+  const pick=candidates.find(id=>id!==deck.last.at(-1))??candidates[0];
   // A full bag always has enough distinct entries, including at the bag boundary.
   sequence.push(pick);deck.remaining.splice(deck.remaining.indexOf(pick),1);
  }
@@ -39,6 +38,7 @@ export function drawTaskSequence(deck:FinanceDeck,choose:(max:number)=>number=ra
 }
 export function makeTaskStage(laptopId:number,stage:number,sequence?:number[]):Puzzle{
  if(sequence){const mode=sequence[stage];
+  if(mode<=10)return makePuzzle(mode);
   const interactive=makeInteractiveFinance(mode,randomInt);if(interactive)return interactive;
   if(mode<=12)return makePuzzle(mode);
   if(mode===13||mode===14)return makeTaskStage(laptopId,mode-12);

@@ -10,10 +10,12 @@ import { Engine } from './engine.js';
 import { Store } from './store.js';
 import { GameError, type Identity } from './types.js';
 import { project } from './views.js';
+import {stateUpdate} from '../src/stateTransport.js';
+type Peer={identity:Identity;code:string;token:string;delta?:boolean;view?:any};
 export function createApp(options:{databasePath:string;adminPassword:string;clock?:()=>number;serveStatic?:boolean;secureCookie?:boolean;store?:Store;serverless?:boolean}) {
   if(options.adminPassword.length<12)throw new Error('ADMIN_PASSWORD moet minimaal 12 tekens bevatten.');
   const store=options.store??new Store(options.databasePath);const app=express();const server=createServer(app);
-  const peers=new Map<WebSocket,{identity:Identity;code:string;token:string}>();
+  const peers=new Map<WebSocket,Peer>();
   const engine=new Engine(store,options.clock??Date.now,g=>{for(const [ws,peer] of peers){if(peer.identity.sessionId===g.id||peer.identity.actor.kind==='admin'&&peer.code===g.code)sendView(ws,peer);}});
   const wss=new WebSocketServer({server,path:'/ws',maxPayload:8192});
   app.disable('x-powered-by');app.use(express.json({limit:'16kb'}));
@@ -42,7 +44,12 @@ export function createApp(options:{databasePath:string;adminPassword:string;cloc
   });
   app.get('/api/join/:code',(req,res)=>{limit(`join-read:${req.ip}`,120);const g=engine.get(String(req.params.code));res.json({code:g.code,title:g.title,phase:g.phase,registrationOpen:g.phase==='lobby',players:g.phase!=='ended'?g.players.filter(p=>!p.claimed).map(p=>({id:p.id,name:p.name})):[]});});
   app.post('/api/join/:code',(req,res)=>{limit(`join:${req.ip}`,40);const body=z.object({name:z.string().max(24).optional(),playerId:z.string().uuid().optional()}).strict().parse(req.body);res.json(engine.claim(String(req.params.code),body));});
-  app.get('/api/sessions/:code',(req,res)=>{const {i,g}=sessionIdentity(req);res.json(project(g,i.actor,engine.now()));});
+  app.get('/api/sessions/:code',(req,res)=>{const {i,g}=sessionIdentity(req),view=project(g,i.actor,engine.now());
+    // Authenticate and tick first; the clock alone does not invalidate an unchanged private view.
+    const {serverTime,...content}=view as any,tag=`"${createHash('sha256').update(JSON.stringify(content)).digest('base64url')}"`;
+    res.setHeader('ETag',tag);res.setHeader('X-Server-Time',String(serverTime));
+    if(req.headers['if-none-match']===tag){res.status(304).end();return;}res.json(view);
+  });
   app.post('/api/sessions/:code/presence',(req,res)=>{const {i,g}=sessionIdentity(req);engine.touch(g.code,i.actor);res.json({ok:true});});
   app.post('/api/sessions/:code/action',(req,res)=>{const {i}=sessionIdentity(req);limit(`action:${i.actor.kind}:${i.sessionId}:${req.ip}`,300);const body=z.object({id:z.string().uuid(),action:z.string().max(40),data:z.record(z.unknown()).optional()}).strict().parse(req.body);const result=engine.command(String(req.params.code),i.actor,body.id,body.action,body.data);res.json({...result,state:project(engine.get(String(req.params.code)),i.actor,engine.now())});});
   app.post('/api/sessions/:code/video-upload',async(req,res)=>{
@@ -71,10 +78,10 @@ export function createApp(options:{databasePath:string;adminPassword:string;cloc
   app.post('/api/sessions/:code/device',(req,res)=>{admin(req);const g=engine.get(String(req.params.code));const body=z.object({kind:z.enum(['board','emergency','laptop']),laptopId:z.number().int().min(1).max(8).optional()}).strict().parse(req.body);if(body.kind==='laptop'&&!body.laptopId)throw new GameError('LAPTOP','Kies een laptop.');const token=store.issue({kind:body.kind,...(body.kind==='laptop'?{laptopId:body.laptopId}: {})},g.id);res.json({token});});
   const dist=resolve(process.cwd(),'dist');if(options.serveStatic!==false&&existsSync(dist)){app.use(express.static(dist,{index:false}));app.get('/{*path}',(_req,res)=>res.sendFile(resolve(dist,'index.html')));}
   app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{if(error instanceof GameError){res.status(error.status).json({error:error.code,message:error.message});}else if(error instanceof z.ZodError){res.status(400).json({error:'VALIDATION',message:'Controleer de ingevoerde waarden.',issues:error.issues.map(i=>({path:i.path,message:i.message}))});}else{console.error('Request error:',error instanceof Error?error.message:'unknown');res.status(500).json({error:'SERVER',message:'De server kon dit verzoek niet verwerken.'});}});
-  function authorized(peer:{identity:Identity;code:string;token:string}){if(!store.identify(peer.token))return false;if(peer.identity.expiresAt && peer.identity.expiresAt<Date.now())return false;const g=store.get(peer.code);return !!g&&(peer.identity.actor.kind==='admin'||peer.identity.sessionId===g.id);}
-  function sendView(ws:WebSocket,peer:{identity:Identity;code:string;token:string}){try {if(!authorized(peer)){ws.close(4001,'expired');return;}const g=engine.get(peer.code);const view=project(g,peer.identity.actor,engine.now());if(!view){ws.close(4001,'player removed');return;}if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>1000000){ws.close(4008,'slow');return;}ws.send(JSON.stringify({type:'state',state:view}));}}catch{ws.close(4001,'invalid');}}
+  function authorized(peer:Peer){if(!store.identify(peer.token))return false;if(peer.identity.expiresAt && peer.identity.expiresAt<Date.now())return false;const id=store.sessionId(peer.code);return !!id&&(peer.identity.actor.kind==='admin'||peer.identity.sessionId===id);}
+  function sendView(ws:WebSocket,peer:Peer){try {if(!authorized(peer)){ws.close(4001,'expired');return;}const g=engine.get(peer.code);const view=project(g,peer.identity.actor,engine.now());if(!view){ws.close(4001,'player removed');return;}if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>1000000){ws.close(4008,'slow');return;}ws.send(JSON.stringify(peer.delta?stateUpdate(peer.view,view):{type:'state',state:view}));peer.view=view;}}catch{ws.close(4001,'invalid');}}
   wss.on('connection',(ws,req)=>{if(!sameOrigin(req)){ws.close(4003,'origin');return;}let n=0,authenticated=false;const timeout=setTimeout(()=>ws.close(4001,'auth required'),5000);ws.on('error',()=>{});
-    ws.on('message',raw=>{try {if(authenticated||++n>2){ws.close(4003,'auth only');return;}const body=z.object({type:z.literal('auth'),code:z.string().regex(/^\d{6}$/),token:z.string().max(128).optional()}).strict().parse(JSON.parse(raw.toString()));const token=body.token??cookieToken(req);const i=token?store.identify(token):null;if(!i)throw new Error('auth');const g=engine.get(body.code);if(i.actor.kind!=='admin'&&i.sessionId!==g.id)throw new Error('session');authenticated=true;clearTimeout(timeout);const peer={identity:i,code:g.code,token:token!};peers.set(ws,peer);sendView(ws,peer);}catch{ws.close(4001,'invalid auth');}});
+    ws.on('message',raw=>{try {if(authenticated||++n>2){ws.close(4003,'auth only');return;}const body=z.object({type:z.literal('auth'),code:z.string().regex(/^\d{6}$/),token:z.string().max(128).optional(),delta:z.boolean().optional()}).strict().parse(JSON.parse(raw.toString()));const token=body.token??cookieToken(req);const i=token?store.identify(token):null;if(!i)throw new Error('auth');const g=engine.get(body.code);if(i.actor.kind!=='admin'&&i.sessionId!==g.id)throw new Error('session');authenticated=true;clearTimeout(timeout);const peer:Peer={identity:i,code:g.code,token:token!,delta:body.delta};peers.set(ws,peer);sendView(ws,peer);}catch{ws.close(4001,'invalid auth');}});
     ws.on('close',()=>{clearTimeout(timeout);peers.delete(ws);});});
   const tickTimer=setInterval(()=>{engine.tick();},100);
   const timeTimer=setInterval(()=>{for(const [ws,p] of peers){if(!authorized(p)){ws.close(4001,'expired');continue;}if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'clock',serverTime:engine.now()}));}},1000);

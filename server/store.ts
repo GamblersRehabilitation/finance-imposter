@@ -1,4 +1,7 @@
 import {TASK_DURATION_MS} from '../src/taskRules.js';
+import {TASK_REWARD,economyFor} from '../src/economyRules.js';
+import {wheelPayout} from '../src/wheelRules.js';
+import {limitAssignments} from './assignmentRules.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -40,6 +43,18 @@ export class Store {
   }
   laptopCodes():Record<number,string> {return Object.fromEntries((this.db.prepare('SELECT laptop_id,code FROM laptop_codes').all() as {laptop_id:number;code:string}[]).map(r=>[r.laptop_id,r.code]));}
   private read(state:string):Game {const g=JSON.parse(state) as Game;g.laptopCodes=this.laptopCodes();
+    for(const [playerId,ids] of Object.entries(g.assignments??{})){const active=(g.terminalAttempts??[]).filter(t=>t.kind==='task'&&t.playerId===playerId).map(t=>t.laptopId),unfinished=ids.filter(id=>(g.taskProgress?.[`${playerId}:${id}`]??0)>0);g.assignments[playerId]=limitAssignments(ids,[...active,...unfinished]);}
+    if((g.economyVersion??0)<1){
+      if(g.phase!=='ended'){
+        for(const task of g.tasks)if(task.reward===5000)task.reward=TASK_REWARD;
+        for(const p of g.players)if(p.visualPractice?.games)p.visualPractice.games=p.visualPractice.games.filter(id=>![2,3,4,8,9,10].includes(id));
+        if(g.config.autoEconomy)Object.assign(g.config,economyFor(g.players.length||g.config.playerCount));
+        if(g.pendingSpin)g.pendingSpin.payout=wheelPayout(g.pendingSpin.segment,g.pendingSpin.stake);
+        const roundAt=g.ledger.filter(entry=>entry.kind==='round').at(-1)?.at??g.createdAt;
+        for(const t of g.thefts)if(t.round===undefined&&t.collectedAt>=roundAt)t.round=g.round;
+      }
+      g.economyVersion=1;
+    }
     // Apply the requested timing update once, including existing sessions and paused deadlines.
     if((g.rulesVersion??0)<2){
       if(g.config.autoMeetingMs===180000){g.config.autoMeetingMs=240000;if(g.nextMeetingAt!==null)g.nextMeetingAt+=60000;}
@@ -53,6 +68,7 @@ export class Store {
     g.taskProgress??={};g.terminalAttempts=(g.terminalAttempts??[]).filter(t=>t.puzzle);g.terminalAttempts.forEach(t=>{t.taskStage??=0;t.sequence??=[g.floorPlan.laptops.find(l=>l.id===t.laptopId)?.gameId??t.laptopId,13,14];if(t.kind==='task')g.taskSequences[`${t.playerId}:${t.laptopId}`]??=t.sequence;t.challengeId??=t.id;if(t.taskExpiresAt===undefined&&!t.practicePending){t.taskExpiresAt=t.expiresAt-270000;if(t.kind==='task')t.expiresAt=t.taskExpiresAt;}});for(const t of g.terminalAttempts){if(t.taskDurationMs===undefined){t.taskDurationMs=TASK_DURATION_MS;if(!t.practicePending&&t.taskExpiresAt!==undefined){t.taskExpiresAt+=TASK_DURATION_MS-30000;if(t.tutorialExpiresAt!==undefined)t.tutorialExpiresAt+=TASK_DURATION_MS-30000;if(t.kind==='task'&&t.tutorialPausedAt==null)t.expiresAt=t.taskExpiresAt;}}}g.config.theftAmount??=null;g.summary??=null;g.pendingSpin??=null;g.taskFailures??=[];g.jobs??=[];g.presence??={};g.lastGambles??={};g.players.forEach(p=>p.admitted??=true);g.tasks.forEach(t=>{const gameId=g.floorPlan.laptops.find(l=>l.id===t.id)?.gameId??t.id;const [icon,label]=financialTasks[gameId-1];Object.assign(t,{icon,label,module:`finance-${gameId}`});});return g;}
   all():Game[] {return (this.db.prepare('SELECT state FROM sessions').all() as {state:string}[]).map(r=>this.read(r.state));}
   get(code:string):Game|undefined {const row=this.db.prepare('SELECT state FROM sessions WHERE code=? OR id=?').get(code,code) as {state:string}|undefined; return row ? this.read(row.state) : undefined;}
+  sessionId(code:string):string|undefined {return (this.db.prepare('SELECT id FROM sessions WHERE code=? OR id=?').get(code,code) as {id:string}|undefined)?.id;}
   save(g:Game) {this.db.prepare('INSERT INTO sessions(id,code,state) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state').run(g.id,g.code,JSON.stringify((({floorPlan,...state})=>state)(g)));}
   deleteSession(id:string) {
     this.floorPlan();

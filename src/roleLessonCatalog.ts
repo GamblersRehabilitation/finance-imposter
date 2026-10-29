@@ -7,4 +7,4 @@ export const roleChapters:Record<string,string[]>={
 };
 export const ROLE_CHAPTER_SECONDS=10;
 // The player now uses supplied full-length films; chapter data above remains for source renders.
-export const ROLE_FILM_VERSION='provided-20261022';
+export const ROLE_FILM_VERSION='provided-20261028';
